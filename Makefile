@@ -18,10 +18,18 @@ clean:
 run:
 	uv run src/app.py reqarg1 --optional-arg "optional arg"
 
-precommit:
+manual-precommit:
 	uv run ruff format .
 	uv run ruff check . --fix
 	uv run pyright
+
+precommit-install:
+	# One time: Install git hook to run pre-commit automatically on git commit
+	# Uninstall with: uv run pre-commit uninstall
+	uv run pre-commit install
+
+precommit:
+	uv run pre-commit run --all-files
 
 test:
 	PYTHONPATH='./src' uv run pytest -vv --capture=no tests

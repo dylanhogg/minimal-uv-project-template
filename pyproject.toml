@@ -12,7 +12,12 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["pyright>=1.1.408", "pytest>=9.0.2", "ruff>=0.14.13"]
+dev = [
+    "pre-commit>=4.0.1",
+    "pyright>=1.1.408",
+    "pytest>=9.0.2",
+    "ruff>=0.14.13",
+]
 
 [tool.ruff]
 line-length = 120
