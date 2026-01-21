@@ -3,7 +3,7 @@ import sys
 from loguru import logger
 
 
-def configure(remove_existing=True, logfile="./log/app.log"):
+def configure(remove_existing: bool = True, logfile: str = "./log/app.log") -> None:
     if remove_existing:
         logger.remove()
     logger.add(sys.stderr, level=os.getenv("LOG_STDERR_LEVEL", "INFO"))
