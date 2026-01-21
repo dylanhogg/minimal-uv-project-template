@@ -18,7 +18,10 @@ clean:
 run:
 	uv run src/app.py reqarg1 --optional-arg "optional arg"
 
-manual-precommit:
+test:
+	PYTHONPATH='./src' uv run pytest -vv --capture=no tests
+
+manual-checks:
 	uv run ruff format .
 	uv run ruff check . --fix
 	uv run pyright
@@ -30,9 +33,6 @@ precommit-install:
 
 precommit:
 	uv run pre-commit run --all-files
-
-test:
-	PYTHONPATH='./src' uv run pytest -vv --capture=no tests
 
 .DEFAULT_GOAL := help
 .PHONY: help

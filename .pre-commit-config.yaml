@@ -13,6 +13,13 @@ repos:
         language: system
         types_or: [python, pyi]
 
+      - id: pytest
+        name: pytest (uv)
+        entry: env PYTHONPATH=./src uv run pytest -vv --capture=no tests
+        language: system
+        pass_filenames: false
+        always_run: true
+
       - id: pyright
         name: pyright (uv)
         entry: uv run pyright
