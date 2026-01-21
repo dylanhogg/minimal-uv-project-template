@@ -1,0 +1,39 @@
+[project]
+name = "minimal-uv-project-template"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "loguru>=0.7.3",
+    "pydantic>=2.12.5",
+    "python-dotenv>=1.2.1",
+    "typer>=0.21.1",
+]
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.0.1",
+    "pyright>=1.1.408",
+    "pytest>=9.0.2",
+    "ruff>=0.14.13",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.pyright]
+pythonVersion = "3.13"
+venvPath = "."
+venv = ".venv"
+include = ["src", "tests"]
+exclude = ["**/__pycache__"]
+extraPaths = ["src"]
+typeCheckingMode = "strict"  # ["off", "basic", "standard", "strict"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
