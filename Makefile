@@ -21,6 +21,7 @@ run:
 precommit:
 	uv run ruff format .
 	uv run ruff check . --fix
+	uv run pyright
 
 test:
 	PYTHONPATH='./src' uv run pytest -vv --capture=no tests

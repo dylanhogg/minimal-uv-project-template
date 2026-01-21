@@ -10,8 +10,9 @@ Uses the following 3rd party libraries:
 - APP - https://github.com/pydantic/pydantic - Data validation and settings management using Python type annotations
 - DEV - https://github.com/astral-sh/uv - An extremely fast Python package manager
 - DEV - https://github.com/astral-sh/ruff - Extremely fast Python linter and code formatter
+- DEV - https://github.com/microsoft/pyright - Static type checker for Python
 - DEV - https://github.com/pytest-dev/pytest - makes it easy to write small tests, yet scales to support complex functional testing
 
-See Makefile for quick utility commands for creation of venv, running the app, running tests etc.
+See Makefile for quick utility commands for creation of venv, running the app, running tests, typechecking etc.
 
 Includes project cursor rule files in `.cursor/rules`as per https://docs.cursor.com/context/rules

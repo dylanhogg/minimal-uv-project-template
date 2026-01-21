@@ -12,14 +12,23 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["pytest>=9.0.2", "ruff>=0.14.13"]
+dev = ["pyright>=1.1.408", "pytest>=9.0.2", "ruff>=0.14.13"]
 
 [tool.ruff]
 line-length = 120
 target-version = "py313"
 
-# [tool.ruff.format]
-# quote-style = "double"
-# indent-style = "space"
-# skip-magic-trailing-comma = false
-# line-ending = "auto"
+[tool.pyright]
+pythonVersion = "3.13"
+venvPath = "."
+venv = ".venv"
+include = ["src", "tests"]
+exclude = ["**/__pycache__"]
+extraPaths = ["src"]
+typeCheckingMode = "strict"  # ["off", "basic", "standard", "strict"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
