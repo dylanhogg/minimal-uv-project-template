@@ -18,14 +18,9 @@ clean:
 run:
 	uv run src/app.py reqarg1 --optional-arg "optional arg"
 
-ruff-check:
-	uv run ruff check .
-
-ruff-fix:
-	uv run ruff check . --fix
-
-ruff-format:
+precommit:
 	uv run ruff format .
+	uv run ruff check . --fix
 
 test:
 	PYTHONPATH='./src' uv run pytest -vv --capture=no tests
