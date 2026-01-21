@@ -36,4 +36,7 @@ jobs:
               run: uv sync --frozen --all-groups
 
             - name: Run pre-commit hooks
-              run: make precommit
+              run: uv run pre-commit run --all-files
+
+            - name: Run tests
+              run: PYTHONPATH='./src' uv run pytest -vv --capture=no tests
