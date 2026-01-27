@@ -1,8 +1,10 @@
 import os
+
 import typer
-from library import log
 from dotenv import load_dotenv
 from loguru import logger
+
+from library import log
 
 if not load_dotenv():
     logger.warning("Failed to load .env file")

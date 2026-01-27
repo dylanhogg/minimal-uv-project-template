@@ -23,6 +23,19 @@ dev = [
 line-length = 120
 target-version = "py313"
 
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+
+[tool.ruff.lint]
+select = [
+    # "E", # pycodestyle errors
+    "F", # pyflakes
+    "I", # import sorting (isort-compatible)
+]
+
 [tool.pyright]
 pythonVersion = "3.13"
 venvPath = "."
@@ -31,9 +44,3 @@ include = ["src", "tests"]
 exclude = ["**/__pycache__"]
 extraPaths = ["src"]
 typeCheckingMode = "strict"  # ["off", "basic", "standard", "strict"]
-
-[tool.ruff.format]
-quote-style = "double"
-indent-style = "space"
-skip-magic-trailing-comma = false
-line-ending = "auto"
