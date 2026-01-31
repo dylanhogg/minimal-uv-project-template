@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   ci:
-    name: pre-commit checks
+    name: CI Checks
     runs-on: ubuntu-latest
 
     steps:
