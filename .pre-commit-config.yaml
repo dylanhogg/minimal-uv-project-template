@@ -2,26 +2,26 @@ repos:
   - repo: local
     hooks:
       - id: ruff-format
-        name: ruff format (uv)
+        name: ruff-format (code formatting)
         entry: uv run ruff format .
         language: system
         types_or: [python, pyi]
 
       - id: ruff-check
-        name: ruff check and fix (uv)
-        entry: uv run ruff check . --fix
+        name: ruff-check (code linting)
+        entry: uv run ruff check .
         language: system
         types_or: [python, pyi]
 
-      - id: pytest
-        name: pytest (uv)
-        entry: env PYTHONPATH=./src uv run pytest -vv --capture=no tests
-        language: system
-        pass_filenames: false
-        always_run: true
-
       - id: pyright
-        name: pyright (uv)
+        name: pyright (static type checking)
         entry: uv run pyright
         language: system
         pass_filenames: false
+
+      - id: pytest
+        name: pytest (testing)
+        entry: uv run pytest -vv --capture=no tests
+        language: system
+        pass_filenames: false
+        always_run: true
