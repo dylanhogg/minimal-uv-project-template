@@ -32,11 +32,17 @@ jobs:
       - name: Install Python 3.13
         run: uv python install 3.13
 
-      - name: Sync environment (lockfile + dev tools)
+      - name: uv sync (install dependencies)
         run: uv sync --frozen --all-groups
 
-      - name: Run pre-commit hooks
-        run: uv run pre-commit run --all-files
+      - name: ruff-format (code formatting)
+        run: uv run ruff format .
 
-      - name: Run tests
+      - name: ruff-check (code linting)
+        run: uv run ruff check .
+
+      - name: pyright (static type checking)
+        run: uv run pyright
+
+      - name: pytest (testing)
         run: uv run pytest -vv --capture=no tests
