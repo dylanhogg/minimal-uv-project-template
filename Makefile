@@ -19,7 +19,7 @@ run:
 	uv run src/app.py reqarg1 --optional-arg "optional arg"
 
 test:
-	PYTHONPATH='./src' uv run pytest -vv --capture=no tests
+	uv run pytest -vv --capture=no tests
 
 manual-checks:
 	uv run ruff format .

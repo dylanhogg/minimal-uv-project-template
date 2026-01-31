@@ -15,7 +15,7 @@ repos:
 
       - id: pytest
         name: pytest (uv)
-        entry: env PYTHONPATH=./src uv run pytest -vv --capture=no tests
+        entry: uv run pytest -vv --capture=no tests
         language: system
         pass_filenames: false
         always_run: true
