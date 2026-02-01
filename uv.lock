@@ -112,7 +112,7 @@ wheels = [
 ]
 
 [[package]]
-name = "minimal-uv-project-template"
+name = "my-project"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

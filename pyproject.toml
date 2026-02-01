@@ -1,7 +1,7 @@
 [project]
-name = "minimal-uv-project-template"
+name = "my-project"
 version = "0.1.0"
-description = "Add your description here"
+description = "My project description"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
@@ -19,6 +19,9 @@ dev = [
     "ruff>=0.14.13",
 ]
 
+[project.scripts]
+app = "my_project.app:run"
+
 [tool.ruff]
 line-length = 120
 target-version = "py313"
@@ -31,7 +34,7 @@ line-ending = "auto"
 
 [tool.ruff.lint]
 select = [
-    # "E", # pycodestyle errors
+    "E", # pycodestyle errors
     "F", # pyflakes
     "I", # import sorting (isort-compatible)
 ]
@@ -42,7 +45,6 @@ venvPath = "."
 venv = ".venv"
 include = ["src", "tests"]
 exclude = ["**/__pycache__"]
-extraPaths = ["src"]
 typeCheckingMode = "strict"  # ["off", "basic", "standard", "strict"]
 
 [tool.pytest.ini_options]

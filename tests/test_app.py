@@ -1,4 +1,4 @@
-import app
+from my_project import app
 
 
 def test1() -> None:

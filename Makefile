@@ -7,6 +7,7 @@ venv:
 	# Other recommended libraries, add with `uv add <library>`:
 	# tenacity, joblib, jupyterlab, litellm, datasets, pytorch, fastapi, uvicorn, rich
 	uv sync
+	uv pip install -e .
 
 which-python:
 	uv run which python | pbcopy
@@ -16,7 +17,10 @@ clean:
 	rm -rf .venv
 
 run:
-	uv run src/app.py reqarg1 --optional-arg "optional arg"
+	uv run python -m my_project.app reqarg1 --optional-arg "optional arg"
+
+run-as-tool:
+	uv run app reqarg1 --optional-arg "optional arg"
 
 test:
 	uv run pytest -vv --capture=no tests
