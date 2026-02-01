@@ -4,7 +4,7 @@ import typer
 from dotenv import load_dotenv
 from loguru import logger
 
-from library import log
+from my_project.library import log
 
 if not load_dotenv():
     logger.warning("Failed to load .env file")
@@ -19,8 +19,14 @@ def main(required_arg: str, optional_arg: str | None = None) -> None:
     logger.info(f"LOG_STDERR_LEVEL={os.getenv('LOG_STDERR_LEVEL', 'Not set. Copy `.env_template` to `.env`')}")
     logger.info(f"LOG_FILE_LEVEL={os.getenv('LOG_FILE_LEVEL', 'Not set. Copy `.env_template` to `.env`')}")
     # raise NotImplementedError("app.main() not implemented")
+    logger.info("Finished.")
+
+
+def run() -> int:
+    log.configure()
+    app()
+    return 0
 
 
 if __name__ == "__main__":
-    log.configure()
-    app()
+    run()

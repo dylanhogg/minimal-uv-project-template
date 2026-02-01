@@ -1,7 +1,7 @@
 [project]
-name = "minimal-uv-project-template"
+name = "my-project"
 version = "0.1.0"
-description = "Add your description here"
+description = "My project description"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
@@ -18,6 +18,9 @@ dev = [
     "pytest>=9.0.2",
     "ruff>=0.14.13",
 ]
+
+[project.scripts]
+app = "my_project.app:run"
 
 [tool.ruff]
 line-length = 120
