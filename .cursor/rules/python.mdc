@@ -58,13 +58,16 @@ alwaysApply: false
 
 ## Tests
 
+- Use `pytest` for testing
 - Follow the naming convention: test_*.py
 - Use fixtures for test setup and teardown
+- Place test files in `./tests/<package_name>/`
 
 ## Project Structure
 
-- Keep source code in a `src` directory
-- Place tests in a `tests` directory
-- Keep configuration files in the root directory
-- Manage dependencies via `pyproject.toml`
 - Package management is via `uv`
+- Manage dependencies via `pyproject.toml`, with dev dependencies in the `[dependency-groups]` section
+- Keep source code in a `./src/<package_name>/` directory
+- Place tests in a `./tests/<package_name>/` directory
+- Keep configuration files in the root directory
+- See `Makefile` for project management commands
