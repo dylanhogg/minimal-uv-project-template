@@ -34,7 +34,7 @@ line-ending = "auto"
 
 [tool.ruff.lint]
 select = [
-    # "E", # pycodestyle errors
+    "E", # pycodestyle errors
     "F", # pyflakes
     "I", # import sorting (isort-compatible)
 ]
