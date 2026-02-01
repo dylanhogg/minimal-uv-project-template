@@ -45,7 +45,6 @@ venvPath = "."
 venv = ".venv"
 include = ["src", "tests"]
 exclude = ["**/__pycache__"]
-extraPaths = ["src"]
 typeCheckingMode = "strict"  # ["off", "basic", "standard", "strict"]
 
 [tool.pytest.ini_options]
