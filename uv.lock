@@ -114,7 +114,7 @@ wheels = [
 [[package]]
 name = "my-project"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "loguru" },
     { name = "pydantic" },
