@@ -22,8 +22,17 @@ run:
 run-as-tool:
 	uv run app reqarg1 --optional-arg "optional arg"
 
+run-as-docker:
+	docker compose run --rm app reqarg --optional-arg optarg
+
+docker-build:
+	docker compose build --no-cache
+
 test:
 	uv run pytest -vv --capture=no tests
+
+test-as-docker:
+	docker compose run --rm tests
 
 manual-checks:
 	uv run ruff format .

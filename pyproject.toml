@@ -20,7 +20,7 @@ dev = [
 ]
 
 [project.scripts]
-app = "my_project.app:run"
+app = "my_project.app:app"
 
 [tool.ruff]
 line-length = 120
@@ -49,3 +49,6 @@ typeCheckingMode = "strict"  # ["off", "basic", "standard", "strict"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
+
+[tool.uv]
+package = true

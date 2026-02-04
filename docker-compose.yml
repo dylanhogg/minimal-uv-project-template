@@ -1,0 +1,17 @@
+services:
+  app:
+    build: .
+    working_dir: /app
+    env_file: .env
+    volumes:
+      - .:/app
+      - ./log:/app/log
+    command: ["reqarg1", "--optional-arg", "optarg1"]
+
+  tests:
+    build: .
+    working_dir: /app
+    env_file: .env
+    volumes:
+      - .:/app
+    entrypoint: ["uv", "run", "pytest", "-q", "-vv"]
