@@ -71,3 +71,9 @@ alwaysApply: false
 - Place tests in a `./tests/<package_name>/` directory
 - Keep configuration files in the root directory
 - See `Makefile` for project management commands
+
+
+## Critical Thinking
+
+- Fix root cause (not band-aid)
+- Unsure: read more code; if still stuck, ask with short options
