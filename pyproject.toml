@@ -20,7 +20,7 @@ dev = [
 ]
 
 [project.scripts]
-app = "my_project.app:run"
+app = "my_project.app:app"
 
 [tool.ruff]
 line-length = 120

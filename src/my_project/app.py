@@ -13,20 +13,16 @@ app = typer.Typer(pretty_exceptions_enable=False, pretty_exceptions_show_locals=
 
 
 @app.command()
-def main(required_arg: str, optional_arg: str | None = None) -> None:
+def main(required_arg: str, optional_arg: str | None = None) -> int:
+    log.configure()
     logger.info(f"Hello! {required_arg=}, {optional_arg=}")
     logger.info(f"PYTHONPATH={os.getenv('PYTHONPATH', 'Not set')}")
     logger.info(f"LOG_STDERR_LEVEL={os.getenv('LOG_STDERR_LEVEL', 'Not set. Copy `.env_template` to `.env`')}")
     logger.info(f"LOG_FILE_LEVEL={os.getenv('LOG_FILE_LEVEL', 'Not set. Copy `.env_template` to `.env`')}")
     # raise NotImplementedError("app.main() not implemented")
     logger.info("Finished.")
-
-
-def run() -> int:
-    log.configure()
-    app()
     return 0
 
 
 if __name__ == "__main__":
-    run()
+    app()
