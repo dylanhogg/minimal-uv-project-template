@@ -23,8 +23,10 @@ run-as-tool:
 	uv run app reqarg1 --optional-arg "optional arg"
 
 run-as-docker:
-	# docker compose run --rm app otherreq --optional-arg otheropt
-	docker compose run --rm app
+	docker compose run --rm app reqarg --optional-arg optarg
+
+docker-build:
+	docker compose build --no-cache
 
 test:
 	uv run pytest -vv --capture=no tests

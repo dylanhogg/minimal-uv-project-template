@@ -7,9 +7,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 # Where uv will create the project venv inside the container
 ENV UV_PROJECT_ENVIRONMENT=/opt/venv \
+    UV_CACHE_DIR=/root/.cache/uv \
     PATH="/opt/venv/bin:$PATH"
 
 WORKDIR /app
+
+# Default to copy mode to avoid hardlink warnings across filesystems
+ENV UV_LINK_MODE=copy
 
 # Install uv
 RUN pip install --no-cache-dir uv
@@ -25,6 +29,9 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Copy source (optional for dev; still useful so image can run without mounts)
 COPY src ./src
 COPY tests ./tests
+
+# Install project in editable mode (dev-friendly with bind mounts)
+RUN uv pip install -e . --no-deps
 
 # Create log dir
 RUN mkdir -p /app/log
