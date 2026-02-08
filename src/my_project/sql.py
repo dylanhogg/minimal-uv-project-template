@@ -1,39 +1,132 @@
 from __future__ import annotations
 
-import csv
-import io
 import json
+import re
 import time
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Literal, cast
 
 import duckdb
 import typer
-from prompt_toolkit import PromptSession
-from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
-from prompt_toolkit.completion import Completer, Completion
-from prompt_toolkit.history import FileHistory
-from prompt_toolkit.styles import Style
 from rich import box
-from rich.console import Console, RenderableType
+from rich.console import Console
 from rich.panel import Panel
-from rich.syntax import Syntax
 from rich.table import Table
+from textual.app import App, ComposeResult
+from textual.binding import Binding
+from textual.containers import Horizontal, Vertical
+from textual.widgets import DataTable, Footer, Header, RichLog, Static, TextArea
 
 app = typer.Typer(
-    help="Interactive DuckDB SQL explorer for CSV/Parquet files.",
+    help="Interactive DuckDB SQL explorer for CSV/TSV/Parquet files.",
     pretty_exceptions_enable=False,
     pretty_exceptions_show_locals=True,
 )
 
+ResultStatus = Literal["ok", "info", "error"]
+HELPER_COMMANDS = [
+    ":help",
+    ":schema",
+    ":sample",
+    ":filter",
+    ":sort",
+    ":group",
+    ":agg",
+    ":top",
+    ":profile",
+    ":describe",
+    ":history",
+    ":rerun",
+    ":rows",
+    ":values",
+    ":limit",
+    ":save",
+    ":last",
+    ":clear",
+    ":exit",
+    ":quit",
+]
+SQL_KEYWORDS = [
+    "SELECT",
+    "FROM",
+    "WHERE",
+    "GROUP",
+    "BY",
+    "HAVING",
+    "ORDER",
+    "LIMIT",
+    "AS",
+    "AND",
+    "OR",
+    "NOT",
+    "IN",
+    "IS",
+    "NULL",
+    "COUNT",
+    "SUM",
+    "AVG",
+    "MIN",
+    "MAX",
+    "DISTINCT",
+    "CASE",
+    "WHEN",
+    "THEN",
+    "ELSE",
+    "END",
+    "LIKE",
+    "BETWEEN",
+    "DESC",
+    "ASC",
+    "JOIN",
+    "LEFT",
+    "RIGHT",
+    "INNER",
+    "OUTER",
+    "ON",
+]
+_HELPER_PREFIX_RE = re.compile(r"(?<!\S)(:[A-Za-z_]*)$")
+_IDENT_PREFIX_RE = re.compile(r"([A-Za-z_][A-Za-z0-9_$]*)$")
+_QUOTED_PREFIX_RE = re.compile(r'("(?:""|[^"])*)$')
+_SIMPLE_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_$]*$")
 
-def _detect_reader(file_path: Path) -> str:
+
+@dataclass(slots=True)
+class QueryResult:
+    sql: str
+    columns: list[str]
+    rows: list[tuple[Any, ...]]
+    elapsed_ms: float
+    total_rows: int
+    truncated: bool
+
+
+@dataclass(slots=True)
+class EngineResponse:
+    status: ResultStatus
+    message: str
+    result: QueryResult | None = None
+    generated_sql: str | None = None
+    should_exit: bool = False
+    load_query: str | None = None
+    clear_editor: bool = False
+
+
+@dataclass(slots=True)
+class FileReader:
+    function_name: str
+    args: str
+
+
+def _detect_reader(file_path: Path) -> FileReader:
     suffix = file_path.suffix.lower()
     if suffix == ".csv":
-        return "read_csv_auto"
+        return FileReader(function_name="read_csv_auto", args="")
+    if suffix == ".tsv":
+        return FileReader(function_name="read_csv_auto", args=", delim='\\t'")
     if suffix in {".parquet", ".pq"}:
-        return "read_parquet"
-    raise typer.BadParameter("Only .csv and .parquet/.pq files are supported.")
+        return FileReader(function_name="read_parquet", args="")
+    raise typer.BadParameter("Only .csv, .tsv, and .parquet/.pq files are supported.")
 
 
 def _sql_literal(value: str) -> str:
@@ -44,11 +137,25 @@ def _quote_ident(name: str) -> str:
     return '"' + name.replace('"', '""') + '"'
 
 
+def _is_simple_ident(name: str) -> bool:
+    return bool(_SIMPLE_IDENT_RE.fullmatch(name))
+
+
 def _split_pipe_sections(raw: str) -> list[str]:
     return [part.strip() for part in raw.split("|") if part.strip()]
 
 
-def _format_scalar(value: Any, max_chars: int | None) -> str:
+def _parse_optional_positive_int(raw: str) -> int | None:
+    lowered = raw.strip().lower()
+    if lowered in {"off", "none"}:
+        return None
+    try:
+        return max(1, int(lowered))
+    except ValueError:
+        return None
+
+
+def _format_scalar(value: Any, max_chars: int | None = None) -> str:
     if value is None:
         return "NULL"
     text = str(value)
@@ -60,47 +167,727 @@ def _format_scalar(value: Any, max_chars: int | None) -> str:
 
 
 def _is_numeric_type(type_name: str) -> bool:
-    numeric_markers = ("INT", "DECIMAL", "DOUBLE", "FLOAT", "REAL", "NUMERIC")
     upper = type_name.upper()
-    return any(marker in upper for marker in numeric_markers)
+    return any(marker in upper for marker in ("INT", "DOUBLE", "FLOAT", "DECIMAL", "REAL", "NUMERIC"))
 
 
-def _parse_toggle(value: str) -> bool | None:
-    lowered = value.strip().lower()
-    if lowered == "on":
-        return True
-    if lowered == "off":
-        return False
-    return None
+class SqlExplorerEngine:
+    def __init__(
+        self,
+        data_path: Path,
+        table_name: str,
+        database: str,
+        default_limit: int,
+        max_rows_display: int,
+        max_value_chars: int,
+    ) -> None:
+        self.data_path = data_path
+        self.table_name = table_name.replace('"', "")
+        self.database = database
+        self.default_limit = max(1, default_limit)
+        self.max_rows_display = max(1, max_rows_display)
+        self.max_value_chars = max(8, max_value_chars)
+
+        self.conn = duckdb.connect(database=database)
+        self.executed_sql: list[str] = []
+        self.last_sql = self.default_query
+        self.last_result_sql: str | None = None
+
+        reader = _detect_reader(self.data_path)
+        source_sql = f"{reader.function_name}({_sql_literal(str(self.data_path))}{reader.args})"
+        self.conn.execute(f'DROP VIEW IF EXISTS "{self.table_name}"')
+        self.conn.execute(f'CREATE VIEW "{self.table_name}" AS SELECT * FROM {source_sql}')
+
+        self._schema_rows: list[tuple[Any, ...]] = []
+        self.columns: list[str] = []
+        self.column_types: dict[str, str] = {}
+        self.column_lookup: dict[str, str] = {}
+        self.refresh_schema()
+
+    @property
+    def default_query(self) -> str:
+        return f'SELECT * FROM "{self.table_name}" LIMIT {self.default_limit}'
+
+    def close(self) -> None:
+        self.conn.close()
+
+    def refresh_schema(self) -> None:
+        schema_rows = self.conn.execute(f'DESCRIBE "{self.table_name}"').fetchall()
+        self._schema_rows = [tuple(row) for row in schema_rows]
+        self.columns = [str(row[0]) for row in self._schema_rows]
+        self.column_types = {str(row[0]): str(row[1]) for row in self._schema_rows}
+        self.column_lookup = {col.lower(): col for col in self.columns}
+
+    def row_count(self) -> int:
+        out = self.conn.execute(f'SELECT COUNT(*) FROM "{self.table_name}"').fetchone()
+        if out is None:
+            return 0
+        return int(out[0])
+
+    def schema_preview(self, max_columns: int = 24) -> str:
+        rows = self.row_count()
+        head = [
+            "Data Explorer",
+            f"file: {self.data_path}",
+            f"table: {self.table_name}",
+            f"rows: {rows:,}",
+            f"columns: {len(self.columns)}",
+            "",
+            "Schema",
+        ]
+        for name in self.columns[:max_columns]:
+            head.append(f"- {name}: {self.column_types[name]}")
+        if len(self.columns) > max_columns:
+            head.append(f"... +{len(self.columns) - max_columns} more columns")
+        head.extend(
+            [
+                "",
+                "Shortcuts",
+                "Ctrl+Enter run query",
+                "Ctrl+J sample query",
+                "Ctrl+K clear editor",
+                "Ctrl+H help",
+                "Ctrl+Q quit",
+                "",
+                "Helper Commands",
+                ":sample [n]",
+                ":filter <cond>",
+                ":sort <exprs>",
+                ":group cols | aggs [| having]",
+                ":agg aggs [| where]",
+                ":top <col> [n]",
+                ":profile <col>",
+                ":describe",
+                ":history [n]",
+                ":rerun <n>",
+                ":schema  :last  :save <path>",
+                ":rows <n> :values <n> :limit <n>",
+                ":clear  :exit",
+            ]
+        )
+        return "\n".join(head)
+
+    def help_text(self) -> str:
+        lines = [
+            "Run standard SQL directly. Helper commands:",
+            ":help",
+            ":schema",
+            ":sample [n]",
+            ":filter <where condition>",
+            ":sort <order expressions>",
+            ":group <group cols> | <aggregates> [| having]",
+            ":agg <aggregates> [| where]",
+            ":top <column> [n]",
+            ":profile <column>",
+            ":describe",
+            ":history [n]",
+            ":rerun <history_index>",
+            ":rows <n>",
+            ":values <n>",
+            ":limit <n>",
+            ":save <path.csv|path.parquet|path.json>",
+            ":last",
+            ":clear",
+            ":exit / :quit",
+            "",
+            f"settings: limit={self.default_limit}, rows={self.max_rows_display}, values={self.max_value_chars}",
+        ]
+        return "\n".join(lines)
+
+    def _resolve_column(self, raw_column: str) -> str | None:
+        candidate = raw_column.strip()
+        if candidate.startswith('"') and candidate.endswith('"') and len(candidate) > 1:
+            candidate = candidate[1:-1].replace('""', '"')
+        return self.column_lookup.get(candidate.lower())
+
+    def _display_rows(self, rows: list[tuple[Any, ...]]) -> tuple[list[tuple[Any, ...]], bool]:
+        if len(rows) <= self.max_rows_display:
+            return rows, False
+        return rows[: self.max_rows_display], True
+
+    def _table_response(self, columns: list[str], rows: list[tuple[Any, ...]], message: str) -> EngineResponse:
+        shown, truncated = self._display_rows(rows)
+        result = QueryResult(
+            sql="",
+            columns=columns,
+            rows=shown,
+            elapsed_ms=0.0,
+            total_rows=len(rows),
+            truncated=truncated,
+        )
+        return EngineResponse(status="ok", message=message, result=result)
+
+    def run_sql(self, sql_text: str, remember: bool = True) -> EngineResponse:
+        sql = sql_text.strip().rstrip(";")
+        if not sql:
+            return EngineResponse(status="info", message="Query is empty.")
+
+        t0 = time.perf_counter()
+        try:
+            relation = self.conn.execute(sql)
+            rows = relation.fetchall()
+            columns = [str(item[0]) for item in relation.description] if relation.description else []
+        except Exception as exc:  # noqa: BLE001
+            return EngineResponse(status="error", message=str(exc))
+
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        self.last_sql = sql
+        if remember:
+            self.executed_sql.append(sql)
+
+        if not columns:
+            return EngineResponse(status="ok", message=f"Statement executed in {elapsed_ms:.1f} ms")
+
+        shown, truncated = self._display_rows(rows)
+        self.last_result_sql = sql
+        result = QueryResult(
+            sql=sql,
+            columns=columns,
+            rows=shown,
+            elapsed_ms=elapsed_ms,
+            total_rows=len(rows),
+            truncated=truncated,
+        )
+        message = f"{len(shown):,}/{len(rows):,} rows shown in {elapsed_ms:.1f} ms"
+        if truncated:
+            message += f" (row display limit={self.max_rows_display})"
+        return EngineResponse(status="ok", message=message, result=result)
+
+    def run_input(self, raw_input: str) -> EngineResponse:
+        text = raw_input.strip()
+        if not text:
+            return EngineResponse(status="info", message="Type SQL or :help.")
+        if text.startswith(":"):
+            return self._run_command(text)
+        return self.run_sql(text)
+
+    def _run_command(self, command: str) -> EngineResponse:
+        stripped = command.strip()
+        if stripped in {":exit", ":quit"}:
+            return EngineResponse(status="info", message="Exiting SQL explorer.", should_exit=True)
+        if stripped == ":help":
+            return EngineResponse(status="info", message=self.help_text())
+        if stripped == ":schema":
+            rows = [(str(r[0]), str(r[1]), str(r[2])) for r in self._schema_rows]
+            return self._table_response(["column", "type", "nullable"], rows, "Schema")
+        if stripped == ":clear":
+            return EngineResponse(status="info", message="Editor cleared.", clear_editor=True)
+        if stripped == ":last":
+            return EngineResponse(status="info", message="Loaded last SQL in editor.", load_query=self.last_sql)
+        if stripped == ":describe":
+            return self._describe_dataset()
+
+        if stripped.startswith(":history"):
+            parts = stripped.split()
+            count = 20
+            if len(parts) == 2:
+                try:
+                    count = max(1, int(parts[1]))
+                except ValueError:
+                    return EngineResponse(status="error", message="Usage: :history [n]")
+            history = self.executed_sql[-count:]
+            start_idx = max(1, len(self.executed_sql) - len(history) + 1)
+            rows = [(idx, sql) for idx, sql in enumerate(history, start=start_idx)]
+            return self._table_response(["#", "sql"], rows, f"History ({len(history)} queries)")
+
+        if stripped.startswith(":rerun"):
+            parts = stripped.split()
+            if len(parts) != 2:
+                return EngineResponse(status="error", message="Usage: :rerun <n>")
+            try:
+                idx = int(parts[1])
+            except ValueError:
+                return EngineResponse(status="error", message=":rerun expects an integer index")
+            if idx < 1 or idx > len(self.executed_sql):
+                return EngineResponse(status="error", message="History index out of range")
+            sql = self.executed_sql[idx - 1]
+            out = self.run_sql(sql)
+            out.generated_sql = sql
+            return out
+
+        if stripped.startswith(":rows"):
+            payload = stripped.removeprefix(":rows").strip()
+            parsed = _parse_optional_positive_int(payload)
+            if parsed is None:
+                return EngineResponse(status="error", message="Usage: :rows <n>")
+            self.max_rows_display = parsed
+            return EngineResponse(status="ok", message=f"Row display limit set to {self.max_rows_display}")
+
+        if stripped.startswith(":values"):
+            payload = stripped.removeprefix(":values").strip()
+            parsed = _parse_optional_positive_int(payload)
+            if parsed is None:
+                return EngineResponse(status="error", message="Usage: :values <n>")
+            self.max_value_chars = parsed
+            return EngineResponse(status="ok", message=f"Value display limit set to {self.max_value_chars}")
+
+        if stripped.startswith(":limit"):
+            payload = stripped.removeprefix(":limit").strip()
+            parsed = _parse_optional_positive_int(payload)
+            if parsed is None:
+                return EngineResponse(status="error", message="Usage: :limit <n>")
+            self.default_limit = parsed
+            return EngineResponse(status="ok", message=f"Default helper query limit set to {self.default_limit}")
+
+        if stripped.startswith(":save"):
+            payload = stripped.removeprefix(":save").strip()
+            if not payload:
+                return EngineResponse(status="error", message="Usage: :save <path>")
+            return self._save_last_result(payload)
+
+        if stripped.startswith(":profile"):
+            payload = stripped.removeprefix(":profile").strip()
+            if not payload:
+                return EngineResponse(status="error", message="Usage: :profile <column>")
+            return self._profile_column(payload)
+
+        generated_sql = self._helper_command_to_sql(stripped)
+        if generated_sql is None:
+            return EngineResponse(status="error", message=f"Unknown command: {stripped}. Use :help")
+
+        out = self.run_sql(generated_sql)
+        out.generated_sql = generated_sql
+        return out
+
+    def _helper_command_to_sql(self, command: str) -> str | None:
+        if command.startswith(":sample"):
+            parts = command.split()
+            sample_n = self.default_limit
+            if len(parts) == 2:
+                try:
+                    sample_n = max(1, int(parts[1]))
+                except ValueError:
+                    return None
+            return f'SELECT * FROM "{self.table_name}" LIMIT {sample_n}'
+
+        if command.startswith(":filter"):
+            cond = command.removeprefix(":filter").strip()
+            if not cond:
+                return None
+            return f'SELECT * FROM "{self.table_name}" WHERE {cond} LIMIT {self.default_limit}'
+
+        if command.startswith(":sort"):
+            expr = command.removeprefix(":sort").strip()
+            if not expr:
+                return None
+            return f'SELECT * FROM "{self.table_name}" ORDER BY {expr} LIMIT {self.default_limit}'
+
+        if command.startswith(":group"):
+            payload = command.removeprefix(":group").strip()
+            parts = _split_pipe_sections(payload)
+            if len(parts) < 2:
+                return None
+            group_cols = parts[0]
+            aggs = parts[1]
+            having = parts[2] if len(parts) > 2 else ""
+            sql = f'SELECT {group_cols}, {aggs} FROM "{self.table_name}" GROUP BY {group_cols}'
+            if having:
+                sql += f" HAVING {having}"
+            sql += f" ORDER BY {group_cols}"
+            return sql
+
+        if command.startswith(":agg"):
+            payload = command.removeprefix(":agg").strip()
+            parts = _split_pipe_sections(payload)
+            if not parts:
+                return None
+            aggs = parts[0]
+            where = parts[1] if len(parts) > 1 else ""
+            sql = f'SELECT {aggs} FROM "{self.table_name}"'
+            if where:
+                sql += f" WHERE {where}"
+            return sql
+
+        if command.startswith(":top"):
+            parts = command.split()
+            if len(parts) < 2 or len(parts) > 3:
+                return None
+            resolved = self._resolve_column(parts[1])
+            if resolved is None:
+                return None
+            top_n = 10
+            if len(parts) == 3:
+                try:
+                    top_n = max(1, int(parts[2]))
+                except ValueError:
+                    return None
+            qcol = _quote_ident(resolved)
+            return (
+                f'SELECT {qcol} AS value, COUNT(*) AS count FROM "{self.table_name}" '
+                f"GROUP BY {qcol} ORDER BY count DESC, value LIMIT {top_n}"
+            )
+
+        return None
+
+    def _describe_dataset(self) -> EngineResponse:
+        total_rows = self.row_count()
+        total_columns = len(self.columns)
+        column_rows: list[tuple[Any, ...]] = []
+        for column in self.columns:
+            qcol = _quote_ident(column)
+            out = self.conn.execute(
+                f'''SELECT
+                    COUNT(*) AS rows,
+                    COUNT({qcol}) AS non_null,
+                    COUNT(DISTINCT {qcol}) AS distinct_count
+                FROM "{self.table_name}"'''
+            ).fetchone()
+            if out is None:
+                continue
+            rows = int(out[0])
+            non_null = int(out[1])
+            distinct_count = int(out[2])
+            nulls = rows - non_null
+            null_pct = (100.0 * nulls / rows) if rows else 0.0
+            column_rows.append((column, self.column_types[column], distinct_count, nulls, f"{null_pct:.2f}%"))
+
+        message = f"Dataset: {total_rows:,} rows x {total_columns} columns"
+        return self._table_response(["column", "type", "distinct", "nulls", "null_%"], column_rows, message)
+
+    def _profile_column(self, raw_column: str) -> EngineResponse:
+        column = self._resolve_column(raw_column)
+        if column is None:
+            return EngineResponse(status="error", message=f"Unknown column: {raw_column}")
+
+        qcol = _quote_ident(column)
+        out = self.conn.execute(
+            f'''SELECT
+                COUNT(*) AS rows,
+                COUNT(DISTINCT {qcol}) AS distinct_count,
+                SUM(CASE WHEN {qcol} IS NULL THEN 1 ELSE 0 END) AS null_count,
+                MIN({qcol}) AS min_value,
+                MAX({qcol}) AS max_value
+            FROM "{self.table_name}"'''
+        ).fetchone()
+        if out is None:
+            return EngineResponse(status="error", message=f"Failed to profile column: {column}")
+
+        metric_rows: list[tuple[Any, ...]] = [
+            ("column", column),
+            ("type", self.column_types[column]),
+            ("rows", int(out[0])),
+            ("distinct", int(out[1])),
+            ("nulls", int(out[2])),
+            ("min", _format_scalar(out[3])),
+            ("max", _format_scalar(out[4])),
+        ]
+
+        if _is_numeric_type(self.column_types[column]):
+            quantiles = self.conn.execute(
+                f'''SELECT
+                    QUANTILE_CONT({qcol}, 0.25),
+                    QUANTILE_CONT({qcol}, 0.50),
+                    QUANTILE_CONT({qcol}, 0.75)
+                FROM "{self.table_name}"
+                WHERE {qcol} IS NOT NULL'''
+            ).fetchone()
+            if quantiles is not None:
+                metric_rows.append(("p25", _format_scalar(quantiles[0])))
+                metric_rows.append(("p50", _format_scalar(quantiles[1])))
+                metric_rows.append(("p75", _format_scalar(quantiles[2])))
+
+        return self._table_response(["metric", "value"], metric_rows, f"Profile for {column}")
+
+    def _save_last_result(self, path_arg: str) -> EngineResponse:
+        if self.last_result_sql is None:
+            return EngineResponse(status="error", message="No query result to save yet")
+
+        out_path = Path(path_arg).expanduser().resolve()
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        suffix = out_path.suffix.lower()
+
+        try:
+            if suffix == ".csv":
+                self.conn.execute(
+                    f"COPY ({self.last_result_sql}) TO {_sql_literal(str(out_path))} (HEADER, DELIMITER ',')"
+                )
+            elif suffix in {".parquet", ".pq"}:
+                self.conn.execute(f"COPY ({self.last_result_sql}) TO {_sql_literal(str(out_path))} (FORMAT PARQUET)")
+            elif suffix == ".json":
+                relation = self.conn.execute(self.last_result_sql)
+                rows = relation.fetchall()
+                columns = [str(item[0]) for item in relation.description] if relation.description else []
+                records = [dict(zip(columns, row, strict=False)) for row in rows]
+                out_path.write_text(json.dumps(records, indent=2, default=str), encoding="utf-8")
+            else:
+                return EngineResponse(status="error", message="Unsupported extension. Use .csv, .parquet/.pq, or .json")
+        except Exception as exc:  # noqa: BLE001
+            return EngineResponse(status="error", message=f"Save failed: {exc}")
+
+        return EngineResponse(status="ok", message=f"Saved result to {out_path}")
+
+    def completion_tokens(self) -> list[str]:
+        raw_tokens = [*HELPER_COMMANDS, *SQL_KEYWORDS, self.table_name, *self.columns]
+        raw_tokens.extend(_quote_ident(col) for col in self.columns if not _is_simple_ident(col))
+        seen: set[str] = set()
+        tokens: list[str] = []
+        for token in raw_tokens:
+            key = token.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            tokens.append(token)
+        return tokens
 
 
-def _rows_to_csv(columns: list[str], rows: list[tuple[Any, ...]], max_chars: int | None) -> str:
-    buf = io.StringIO()
-    writer = csv.writer(buf)
-    writer.writerow(columns)
-    for row in rows:
-        writer.writerow([_format_scalar(v, max_chars) for v in row])
-    return buf.getvalue().rstrip("\n")
+class SqlQueryEditor(TextArea):
+    def __init__(self, text: str, token_provider: Callable[[], list[str]], **kwargs: Any) -> None:
+        super().__init__(text, language="sql", tab_behavior="indent", soft_wrap=False, **kwargs)
+        self._token_provider = token_provider
+        self.indent_width = 4
+
+    async def _on_key(self, event: Any) -> None:
+        if event.key == "tab":
+            event.stop()
+            event.prevent_default()
+            if self.suggestion:
+                self.insert(self.suggestion)
+            else:
+                self.insert(" " * self._find_columns_to_next_tab_stop())
+            return
+        await super()._on_key(event)
+
+    def update_suggestion(self) -> None:
+        row, col = self.cursor_location
+        left_text = self.document[row][:col]
+        prefix_match = (
+            _HELPER_PREFIX_RE.search(left_text)
+            or _QUOTED_PREFIX_RE.search(left_text)
+            or _IDENT_PREFIX_RE.search(left_text)
+        )
+        if prefix_match is None:
+            self.suggestion = ""
+            return
+
+        prefix = prefix_match.group(1)
+        prefix_lower = prefix.lower()
+        for token in self._token_provider():
+            if not token.lower().startswith(prefix_lower):
+                continue
+            candidate = token
+            if token.isupper() and prefix.islower():
+                candidate = token.lower()
+            elif token.islower() and prefix.isupper():
+                candidate = token.upper()
+            if candidate.lower() == prefix_lower:
+                continue
+            self.suggestion = candidate[len(prefix) :]
+            return
+        self.suggestion = ""
 
 
-def _rows_to_markdown(columns: list[str], rows: list[tuple[Any, ...]], max_chars: int | None) -> str:
-    header = "| " + " | ".join(columns) + " |"
-    separator = "| " + " | ".join(["---"] * len(columns)) + " |"
-    body = ["| " + " | ".join(_format_scalar(v, max_chars) for v in row) + " |" for row in rows]
-    return "\n".join([header, separator, *body])
+class SqlExplorerTui(App[None]):
+    TITLE = "my-project SQL Explorer"
+    SUB_TITLE = "DuckDB + Textual"
+
+    CSS = """
+    Screen {
+        layout: vertical;
+    }
+
+    #body {
+        height: 1fr;
+    }
+
+    #sidebar {
+        width: 38;
+        border: round #4f9da6;
+        padding: 1;
+        background: #102025;
+        color: #f0f4f8;
+    }
+
+    #workspace {
+        width: 1fr;
+        padding: 0 1;
+    }
+
+    .section-title {
+        color: #9abed8;
+        text-style: bold;
+        margin-top: 1;
+    }
+
+    #query_editor {
+        height: 10;
+        border: round #4d7ea8;
+    }
+
+    #results_table {
+        height: 1fr;
+        border: round #5b8f67;
+    }
+
+    #activity_log {
+        height: 11;
+        border: round #b18b3d;
+    }
+    """
+
+    BINDINGS = [
+        Binding("ctrl+enter", "run_query", "Run"),
+        Binding("ctrl+j", "load_sample", "Sample"),
+        Binding("ctrl+k", "clear_editor", "Clear"),
+        Binding("ctrl+e", "focus_editor", "Editor"),
+        Binding("ctrl+r", "focus_results", "Results"),
+        Binding("ctrl+h", "show_help", "Help"),
+        Binding("ctrl+q", "quit", "Quit"),
+    ]
+
+    def __init__(self, engine: SqlExplorerEngine) -> None:
+        super().__init__()
+        self.engine = engine
+
+    def _results_table(self) -> DataTable[str]:
+        return cast(DataTable[str], self.query_one("#results_table", DataTable))
+
+    def compose(self) -> ComposeResult:
+        yield Header(show_clock=True)
+        with Horizontal(id="body"):
+            with Vertical(id="sidebar"):
+                yield Static(self.engine.schema_preview(), id="sidebar_text")
+            with Vertical(id="workspace"):
+                yield Static("Query", classes="section-title")
+                yield SqlQueryEditor(self.engine.default_query, self.engine.completion_tokens, id="query_editor")
+                yield Static("Results", id="results_header", classes="section-title")
+                yield DataTable(id="results_table")
+                yield Static("Activity", classes="section-title")
+                yield RichLog(id="activity_log", markup=True, highlight=True, wrap=True)
+        yield Footer()
+
+    def on_mount(self) -> None:
+        table = self._results_table()
+        table.zebra_stripes = True
+        self._log("Ready. Press Ctrl+Enter to run SQL, or Ctrl+H for command help.", "info")
+        boot = self.engine.run_sql(self.engine.default_query, remember=False)
+        self._apply_response(boot)
+
+    def action_run_query(self) -> None:
+        editor = self.query_one("#query_editor", TextArea)
+        query = editor.text
+        response = self.engine.run_input(query)
+        self._apply_response(response)
+
+    def action_load_sample(self) -> None:
+        editor = self.query_one("#query_editor", TextArea)
+        editor.text = self.engine.default_query
+        editor.focus()
+        self._log("Loaded sample query.", "info")
+
+    def action_clear_editor(self) -> None:
+        editor = self.query_one("#query_editor", TextArea)
+        editor.text = ""
+        editor.focus()
+
+    def action_focus_editor(self) -> None:
+        self.query_one("#query_editor", TextArea).focus()
+
+    def action_focus_results(self) -> None:
+        self._results_table().focus()
+
+    def action_show_help(self) -> None:
+        self._log(self.engine.help_text(), "info")
+
+    def _apply_response(self, response: EngineResponse) -> None:
+        if response.generated_sql:
+            self._log(f"Generated SQL:\n{response.generated_sql}", "info")
+
+        if response.result is not None:
+            self._render_table(response.result)
+
+        if response.message:
+            self._log(response.message, response.status)
+
+        if response.load_query is not None:
+            editor = self.query_one("#query_editor", TextArea)
+            editor.text = response.load_query
+            editor.focus()
+
+        if response.clear_editor:
+            self.action_clear_editor()
+
+        if response.should_exit:
+            self.exit()
+
+        sidebar = self.query_one("#sidebar_text", Static)
+        sidebar.update(self.engine.schema_preview())
+
+    def _render_table(self, result: QueryResult) -> None:
+        table = self._results_table()
+        table.clear(columns=True)
+        if not result.columns:
+            self.query_one("#results_header", Static).update("Results")
+            return
+
+        table.add_columns(*result.columns)
+        for row in result.rows:
+            table.add_row(*[_format_scalar(value, self.engine.max_value_chars) for value in row])
+
+        header = f"Results ({len(result.rows):,}/{result.total_rows:,} rows, {result.elapsed_ms:.1f} ms)"
+        if result.truncated:
+            header += " [truncated]"
+        self.query_one("#results_header", Static).update(header)
+
+    def _log(self, message: str, status: ResultStatus) -> None:
+        logger = self.query_one("#activity_log", RichLog)
+        style_prefix = {
+            "ok": "[green]",
+            "info": "[cyan]",
+            "error": "[red]",
+        }[status]
+        logger.write(f"{style_prefix}{message}[/]")
 
 
-def _rows_to_json(columns: list[str], rows: list[tuple[Any, ...]]) -> str:
-    records = [dict(zip(columns, row, strict=False)) for row in rows]
-    return json.dumps(records, indent=2, default=str)
+def _render_console_response(console: Console, response: EngineResponse, max_value_chars: int) -> int:
+    if response.generated_sql:
+        console.print(Panel(response.generated_sql, title="Generated SQL", border_style="magenta"))
+
+    if response.result is not None:
+        result = response.result
+        table = Table(
+            title=f"Result ({len(result.rows)}/{result.total_rows} rows, {result.elapsed_ms:.1f} ms)",
+            box=box.SIMPLE,
+        )
+        for column in result.columns:
+            table.add_column(column)
+        for row in result.rows:
+            table.add_row(*[_format_scalar(value, max_value_chars) for value in row])
+        console.print(table)
+
+    if response.message:
+        border_style = "green"
+        if response.status == "error":
+            border_style = "red"
+        elif response.status == "info":
+            border_style = "cyan"
+        console.print(Panel(response.message, border_style=border_style))
+
+    return 1 if response.status == "error" else 0
 
 
 @app.command()
 def main(
-    data: Path = typer.Argument(..., exists=True, readable=True, resolve_path=True, help="CSV or Parquet file path."),
+    data: Path = typer.Argument(
+        ...,
+        exists=True,
+        readable=True,
+        resolve_path=True,
+        help="CSV, TSV, or Parquet file path.",
+    ),
     table_name: str = typer.Option("data", "--table", "-t", help="Logical table/view name inside DuckDB."),
-    limit: int = typer.Option(100, "--limit", "-l", min=1, help="Default row limit for raw selects/sample views."),
-    database: str = typer.Option(":memory:", "--db", help="DuckDB database path. Use :memory: for in-memory session."),
+    limit: int = typer.Option(100, "--limit", "-l", min=1, help="Default helper query row limit."),
+    max_rows: int = typer.Option(400, "--max-rows", min=1, help="Maximum rows displayed in the result grid."),
+    max_value_chars: int = typer.Option(
+        160,
+        "--max-value-chars",
+        min=8,
+        help="Maximum characters displayed per cell.",
+    ),
+    database: str = typer.Option(
+        ":memory:",
+        "--db",
+        help="DuckDB database path. Use :memory: for in-memory session.",
+    ),
     execute: str | None = typer.Option(None, "--execute", "-e", help="Run SQL non-interactively and exit."),
     query_file: Path | None = typer.Option(
         None,
@@ -111,699 +898,39 @@ def main(
         resolve_path=True,
         help="Run SQL from file non-interactively and exit.",
     ),
+    no_ui: bool = typer.Option(False, "--no-ui", help="Run once in standard terminal output mode."),
 ) -> None:
     if execute and query_file:
         raise typer.BadParameter("Use either --execute or --file, not both.")
 
     file_path = data.expanduser().resolve()
-    reader = _detect_reader(file_path)
-    safe_table = table_name.replace('"', "")
-
-    console = Console()
-    conn = duckdb.connect(database=database)
-
-    conn.execute(f'DROP VIEW IF EXISTS "{safe_table}"')
-    conn.execute(f'CREATE VIEW "{safe_table}" AS SELECT * FROM {reader}({_sql_literal(str(file_path))})')
-
-    schema_rows = conn.execute(f'DESCRIBE "{safe_table}"').fetchall()
-    columns = [str(row[0]) for row in schema_rows]
-    column_types = {str(row[0]): str(row[1]) for row in schema_rows}
-    column_lookup = {col.lower(): col for col in columns}
-
-    class SchemaCompleter(Completer):
-        def __init__(self, words: list[str]) -> None:
-            self.words = sorted(set(words), key=str.lower)
-
-        def get_completions(self, document: Any, complete_event: Any) -> Any:
-            word = document.get_word_before_cursor(WORD=True)
-            low = word.lower()
-            for candidate in self.words:
-                if candidate.lower().startswith(low):
-                    yield Completion(candidate, start_position=-len(word), display=candidate)
-
-    sql_keywords = [
-        "SELECT",
-        "FROM",
-        "WHERE",
-        "GROUP BY",
-        "ORDER BY",
-        "HAVING",
-        "LIMIT",
-        "DISTINCT",
-        "ASC",
-        "DESC",
-    ]
-    sql_functions = [
-        "COUNT()",
-        "SUM()",
-        "AVG()",
-        "MIN()",
-        "MAX()",
-        "COALESCE()",
-        "ROUND()",
-        "LENGTH()",
-        "LOWER()",
-        "UPPER()",
-        "DATE_TRUNC()",
-        "QUANTILE_CONT()",
-    ]
-
-    aliases = ["d", "t"]
-    aliased_columns = [f"{alias}.{col}" for alias in aliases for col in columns]
-
-    help_entries: list[tuple[str, str, str | None]] = [
-        (":help", "Show command guide", None),
-        (":schema", "Show schema and types", None),
-        (":sample [n]", "Preview first rows", ":sample 10"),
-        (":filter <condition>", "Apply WHERE condition", ":filter label = 1"),
-        (":sort <exprs>", "Sort rows", ":sort label DESC, text ASC"),
-        (":group <cols> | <aggs> [| having]", "Group and aggregate", ":group label | count(*) AS n"),
-        (":agg <aggs> [| where]", "Run aggregate expressions", ":agg count(*) AS n, avg(label) AS avg_label"),
-        (":history [n]", "Show recent executed SQL", ":history 15"),
-        (":rerun <n>", "Execute SQL from :history index", ":rerun 3"),
-        (":format <table|csv|json|markdown>", "Set output format", ":format markdown"),
-        (":page <on|off>", "Toggle pager for long output", ":page on"),
-        (":truncate rows <n|off>", "Set max displayed rows", ":truncate rows 200"),
-        (":truncate values <n|off>", "Set max chars per value", ":truncate values 120"),
-        (":width <n|auto>", "Set table column width", ":width 40"),
-        (":show types", "Show type and null/count summary", None),
-        (":profile <col>", "Distinct/null/min/max/quantiles", ":profile label"),
-        (":top <col> [n]", "Top value frequencies", ":top label 10"),
-        (":describe", "Dataset stats and quality summary", None),
-        (":save <path>", "Save last result (.csv/.parquet/.json)", ":save /tmp/result.parquet"),
-        (":query", "Open guided query builder", None),
-        (":last", "Show previous SQL", None),
-        (":clear", "Clear screen", None),
-        (":exit, :quit", "Exit", None),
-    ]
-
-    helper_commands = [
-        ":help",
-        ":schema",
-        ":sample",
-        ":filter",
-        ":sort",
-        ":group",
-        ":agg",
-        ":query",
-        ":history",
-        ":rerun",
-        ":format",
-        ":page",
-        ":truncate",
-        ":width",
-        ":show",
-        ":profile",
-        ":top",
-        ":describe",
-        ":save",
-        ":last",
-        ":clear",
-        ":exit",
-        ":quit",
-    ]
-
-    completer = SchemaCompleter(
-        [
-            safe_table,
-            *columns,
-            *aliased_columns,
-            *aliases,
-            *sql_keywords,
-            *sql_functions,
-            *helper_commands,
-        ]
+    engine = SqlExplorerEngine(
+        data_path=file_path,
+        table_name=table_name,
+        database=database,
+        default_limit=limit,
+        max_rows_display=max_rows,
+        max_value_chars=max_value_chars,
     )
 
-    history_path = str(Path.home() / ".my_project_sql_history")
-    session: PromptSession[str] = PromptSession(
-        completer=completer,
-        history=FileHistory(history_path),
-        auto_suggest=AutoSuggestFromHistory(),
-        style=Style.from_dict({"prompt": "bold cyan", "continuation": "cyan"}),
-    )
+    try:
+        non_interactive_sql = execute
+        if query_file is not None:
+            non_interactive_sql = query_file.read_text(encoding="utf-8").strip()
 
-    output_format = "table"
-    paging_enabled = False
-    max_rows_display: int | None = 200
-    max_value_chars: int | None = 120
-    column_width: int | None = None
+        if non_interactive_sql is not None:
+            response = engine.run_input(non_interactive_sql)
+            exit_code = _render_console_response(Console(), response, engine.max_value_chars)
+            raise typer.Exit(code=exit_code)
 
-    executed_sql: list[str] = []
-    last_sql = f'SELECT * FROM "{safe_table}" LIMIT {limit}'
-    last_result_sql: str | None = None
+        if no_ui:
+            response = engine.run_sql(engine.default_query, remember=False)
+            exit_code = _render_console_response(Console(), response, engine.max_value_chars)
+            raise typer.Exit(code=exit_code)
 
-    def row_count() -> int:
-        out = conn.execute(f'SELECT COUNT(*) FROM "{safe_table}"').fetchone()
-        if out is None:
-            raise RuntimeError("Failed to count rows.")
-        return int(out[0])
-
-    def resolve_column(raw: str) -> str | None:
-        candidate = raw.strip()
-        if candidate.startswith('"') and candidate.endswith('"') and len(candidate) >= 2:
-            candidate = candidate[1:-1].replace('""', '"')
-        return column_lookup.get(candidate.lower())
-
-    def display_rows(rows: list[tuple[Any, ...]]) -> tuple[list[tuple[Any, ...]], bool]:
-        if max_rows_display is None:
-            return rows, False
-        if len(rows) <= max_rows_display:
-            return rows, False
-        return rows[:max_rows_display], True
-
-    def print_renderable(renderable: RenderableType, use_pager: bool = False) -> None:
-        if paging_enabled and use_pager:
-            with console.pager(styles=True):
-                console.print(renderable)
-            return
-        console.print(renderable)
-
-    def print_text(text: str, use_pager: bool = False) -> None:
-        if paging_enabled and use_pager:
-            with console.pager(styles=False):
-                console.print(text)
-            return
-        console.print(text)
-
-    def render_rows(sql_text: str, generated: bool = False, remember: bool = True) -> bool:
-        nonlocal last_sql
-        nonlocal last_result_sql
-        t0 = time.perf_counter()
-        try:
-            rel = conn.execute(sql_text)
-            rows = rel.fetchall()
-            cols = [str(d[0]) for d in rel.description] if rel.description else []
-            elapsed_ms = (time.perf_counter() - t0) * 1000
-        except Exception as exc:  # noqa: BLE001
-            console.print(Panel(str(exc), title="Query Error", border_style="red"))
-            return False
-
-        last_sql = sql_text
-        if remember:
-            executed_sql.append(str(sql_text))
-
-        if generated:
-            console.print(
-                Panel(
-                    Syntax(sql_text, "sql", line_numbers=False),
-                    title="Generated SQL",
-                    border_style="magenta",
-                )
-            )
-
-        if not cols:
-            console.print(Panel(f"Statement executed in {elapsed_ms:.1f} ms", border_style="green"))
-            return True
-
-        shown_rows, truncated = display_rows(rows)
-        shown_count = len(shown_rows)
-        last_result_sql = sql_text
-
-        if output_format == "table":
-            table = Table(
-                title=f"Result ({len(rows)} rows, {elapsed_ms:.1f} ms)",
-                box=box.MINIMAL_DOUBLE_HEAD,
-                show_lines=False,
-            )
-            for col in cols:
-                if column_width is None:
-                    table.add_column(col, overflow="fold")
-                else:
-                    table.add_column(col, overflow="fold", max_width=column_width)
-            for row in shown_rows:
-                table.add_row(*[_format_scalar(v, max_value_chars) for v in row])
-            print_renderable(table, use_pager=len(rows) > shown_count)
-        elif output_format == "csv":
-            print_text(_rows_to_csv(cols, shown_rows, max_value_chars), use_pager=len(rows) > shown_count)
-        elif output_format == "markdown":
-            print_text(_rows_to_markdown(cols, shown_rows, max_value_chars), use_pager=len(rows) > shown_count)
-        elif output_format == "json":
-            print_text(_rows_to_json(cols, shown_rows), use_pager=len(rows) > shown_count)
-
-        if truncated:
-            console.print(f"[yellow]Showing {shown_count} of {len(rows)} rows.[/yellow]")
-        console.print(
-            f"[dim]format={output_format} page={'on' if paging_enabled else 'off'} elapsed={elapsed_ms:.1f}ms[/dim]"
-        )
-        return True
-
-    def build_help_text() -> str:
-        lines = [f"[bold]Run SQL directly[/bold]: `SELECT * FROM {safe_table} LIMIT 20;`", "[bold]Helpers[/bold]:"]
-        usage_width = max(len(usage) for usage, _, _ in help_entries)
-        for usage, description, example in help_entries:
-            lines.append(f"  {usage:<{usage_width}}  {description}")
-            if example is not None:
-                lines.append(f"  {'':<{usage_width}}  e.g. {example}")
-        lines.append(
-            f"\n[bold]Display[/bold]: format={output_format}, page={'on' if paging_enabled else 'off'}, "
-            f"rows={'off' if max_rows_display is None else max_rows_display}, "
-            f"values={'off' if max_value_chars is None else max_value_chars}, "
-            f"width={'auto' if column_width is None else column_width}"
-        )
-        return "\n".join(lines)
-
-    def schema_table() -> Table:
-        table = Table(title=f"Schema: {safe_table}", box=box.SIMPLE_HEAVY)
-        table.add_column("Column", style="bold")
-        table.add_column("Type")
-        table.add_column("Nullable")
-        for row in schema_rows:
-            table.add_row(str(row[0]), str(row[1]), str(row[2]))
-        return table
-
-    def null_counts_by_column() -> dict[str, int]:
-        counts: dict[str, int] = {}
-        for col in columns:
-            qcol = _quote_ident(col)
-            out = conn.execute(f'SELECT SUM(CASE WHEN {qcol} IS NULL THEN 1 ELSE 0 END) FROM "{safe_table}"').fetchone()
-            counts[col] = 0 if out is None or out[0] is None else int(out[0])
-        return counts
-
-    def show_type_summary() -> None:
-        total_rows = row_count()
-        nulls = null_counts_by_column()
-        table = Table(title="Column Summary", box=box.SIMPLE_HEAVY)
-        table.add_column("Column", style="bold")
-        table.add_column("Type")
-        table.add_column("Nulls", justify="right")
-        table.add_column("Non-null", justify="right")
-        table.add_column("Null %", justify="right")
-        for col in columns:
-            null_count = nulls[col]
-            non_null = total_rows - null_count
-            pct = (100.0 * null_count / total_rows) if total_rows else 0.0
-            table.add_row(col, column_types[col], str(null_count), str(non_null), f"{pct:.2f}%")
-        console.print(table)
-
-    def describe_dataset() -> None:
-        total_rows = row_count()
-        total_columns = len(columns)
-        nulls = null_counts_by_column()
-        null_cells = sum(nulls.values())
-        total_cells = total_rows * total_columns
-        completeness = (100.0 * (total_cells - null_cells) / total_cells) if total_cells else 100.0
-
-        distinct_rows_result = conn.execute(
-            f'SELECT COUNT(*) FROM (SELECT DISTINCT * FROM "{safe_table}") as distinct_rows'
-        ).fetchone()
-        distinct_rows = int(distinct_rows_result[0]) if distinct_rows_result else total_rows
-        duplicate_rows = max(0, total_rows - distinct_rows)
-
-        summary = Table(title="Dataset Summary", box=box.SIMPLE_HEAVY)
-        summary.add_column("Metric", style="bold")
-        summary.add_column("Value", justify="right")
-        summary.add_row("Rows", str(total_rows))
-        summary.add_row("Columns", str(total_columns))
-        summary.add_row("Total null cells", str(null_cells))
-        summary.add_row("Completeness", f"{completeness:.2f}%")
-        summary.add_row("Duplicate rows", str(duplicate_rows))
-        console.print(summary)
-
-        quality = Table(title="Top Null-Rate Columns", box=box.SIMPLE_HEAVY)
-        quality.add_column("Column", style="bold")
-        quality.add_column("Nulls", justify="right")
-        quality.add_column("Null %", justify="right")
-        ranked = sorted(columns, key=lambda c: nulls[c], reverse=True)[:5]
-        for col in ranked:
-            pct = (100.0 * nulls[col] / total_rows) if total_rows else 0.0
-            quality.add_row(col, str(nulls[col]), f"{pct:.2f}%")
-        console.print(quality)
-
-    def profile_column(raw_column: str) -> None:
-        resolved = resolve_column(raw_column)
-        if resolved is None:
-            console.print(f"[red]Unknown column: {raw_column}[/red]")
-            return
-        qcol = _quote_ident(resolved)
-        stats = conn.execute(
-            f'''SELECT
-                COUNT(*) AS total_rows,
-                COUNT(DISTINCT {qcol}) AS distinct_count,
-                SUM(CASE WHEN {qcol} IS NULL THEN 1 ELSE 0 END) AS null_count,
-                MIN({qcol}) AS min_value,
-                MAX({qcol}) AS max_value
-            FROM "{safe_table}"'''
-        ).fetchone()
-        if stats is None:
-            console.print("[red]Unable to compute profile.[/red]")
-            return
-
-        profile = Table(title=f"Profile: {resolved}", box=box.SIMPLE_HEAVY)
-        profile.add_column("Metric", style="bold")
-        profile.add_column("Value")
-        profile.add_row("Type", column_types[resolved])
-        profile.add_row("Rows", str(int(stats[0])))
-        profile.add_row("Distinct", str(int(stats[1])))
-        profile.add_row("Nulls", str(int(stats[2])))
-        profile.add_row("Min", _format_scalar(stats[3], max_value_chars))
-        profile.add_row("Max", _format_scalar(stats[4], max_value_chars))
-
-        if _is_numeric_type(column_types[resolved]):
-            quantiles = conn.execute(
-                f'''SELECT
-                    QUANTILE_CONT({qcol}, 0.25),
-                    QUANTILE_CONT({qcol}, 0.50),
-                    QUANTILE_CONT({qcol}, 0.75)
-                FROM "{safe_table}"
-                WHERE {qcol} IS NOT NULL'''
-            ).fetchone()
-            if quantiles is not None:
-                profile.add_row("P25", _format_scalar(quantiles[0], max_value_chars))
-                profile.add_row("P50", _format_scalar(quantiles[1], max_value_chars))
-                profile.add_row("P75", _format_scalar(quantiles[2], max_value_chars))
-
-        console.print(profile)
-
-    def top_values(raw_column: str, n: int) -> None:
-        resolved = resolve_column(raw_column)
-        if resolved is None:
-            console.print(f"[red]Unknown column: {raw_column}[/red]")
-            return
-        n = max(1, n)
-        qcol = _quote_ident(resolved)
-        sql = (
-            f'SELECT {qcol} AS value, COUNT(*) AS count FROM "{safe_table}" '
-            f"GROUP BY {qcol} ORDER BY count DESC, value LIMIT {n}"
-        )
-        render_rows(sql, generated=True)
-
-    def save_last_result(path_arg: str) -> None:
-        if last_result_sql is None:
-            console.print("[red]No query result to save yet.[/red]")
-            return
-
-        out = Path(path_arg).expanduser().resolve()
-        out.parent.mkdir(parents=True, exist_ok=True)
-        suffix = out.suffix.lower()
-
-        try:
-            if suffix == ".csv":
-                conn.execute(f"COPY ({last_result_sql}) TO {_sql_literal(str(out))} (HEADER, DELIMITER ',')")
-            elif suffix in {".parquet", ".pq"}:
-                conn.execute(f"COPY ({last_result_sql}) TO {_sql_literal(str(out))} (FORMAT PARQUET)")
-            elif suffix == ".json":
-                rel = conn.execute(last_result_sql)
-                rows = rel.fetchall()
-                cols = [str(d[0]) for d in rel.description] if rel.description else []
-                out.write_text(_rows_to_json(cols, rows), encoding="utf-8")
-            else:
-                console.print("[red]Unsupported extension. Use .csv, .parquet/.pq, or .json[/red]")
-                return
-        except Exception as exc:  # noqa: BLE001
-            console.print(Panel(str(exc), title="Save Error", border_style="red"))
-            return
-
-        console.print(f"[green]Saved result to {out}[/green]")
-
-    def command_to_sql(raw: str) -> str | None:
-        stripped = raw.strip()
-        if not stripped:
-            return None
-
-        if stripped.startswith(":sample"):
-            parts = stripped.split()
-            sample_n = limit
-            if len(parts) > 1:
-                try:
-                    sample_n = max(1, int(parts[1]))
-                except ValueError:
-                    console.print("[red]:sample expects an integer row count[/red]")
-                    return None
-            return f'SELECT * FROM "{safe_table}" LIMIT {sample_n}'
-
-        if stripped.startswith(":filter"):
-            cond = stripped.removeprefix(":filter").strip()
-            if not cond:
-                console.print("[red]Usage: :filter <where condition>[/red]")
-                return None
-            return f'SELECT * FROM "{safe_table}" WHERE {cond} LIMIT {limit}'
-
-        if stripped.startswith(":sort"):
-            expr = stripped.removeprefix(":sort").strip()
-            if not expr:
-                console.print("[red]Usage: :sort <order expressions>[/red]")
-                return None
-            return f'SELECT * FROM "{safe_table}" ORDER BY {expr} LIMIT {limit}'
-
-        if stripped.startswith(":group"):
-            payload = stripped.removeprefix(":group").strip()
-            parts = _split_pipe_sections(payload)
-            if len(parts) < 2:
-                console.print("[red]Usage: :group <group cols> | <aggregates> [| having][/red]")
-                return None
-            group_cols = parts[0]
-            aggs = parts[1]
-            having = parts[2] if len(parts) > 2 else ""
-            sql = f'SELECT {group_cols}, {aggs} FROM "{safe_table}" GROUP BY {group_cols}'
-            if having:
-                sql += f" HAVING {having}"
-            sql += f" ORDER BY {group_cols}"
-            return sql
-
-        if stripped.startswith(":agg"):
-            payload = stripped.removeprefix(":agg").strip()
-            parts = _split_pipe_sections(payload)
-            if not parts:
-                console.print("[red]Usage: :agg <aggregates> [| where][/red]")
-                return None
-            aggs = parts[0]
-            where = parts[1] if len(parts) > 1 else ""
-            sql = f'SELECT {aggs} FROM "{safe_table}"'
-            if where:
-                sql += f" WHERE {where}"
-            return sql
-
-        if stripped.startswith(":query"):
-            console.print("[cyan]Query builder (leave blank to skip a section)[/cyan]")
-            select_expr = session.prompt("select> ").strip() or "*"
-            where_expr = session.prompt("where> ").strip()
-            group_expr = session.prompt("group by> ").strip()
-            having_expr = session.prompt("having> ").strip()
-            order_expr = session.prompt("order by> ").strip()
-            limit_expr = session.prompt(f"limit [{limit}]> ").strip() or str(limit)
-            sql = f'SELECT {select_expr} FROM "{safe_table}"'
-            if where_expr:
-                sql += f" WHERE {where_expr}"
-            if group_expr:
-                sql += f" GROUP BY {group_expr}"
-            if having_expr:
-                sql += f" HAVING {having_expr}"
-            if order_expr:
-                sql += f" ORDER BY {order_expr}"
-            sql += f" LIMIT {limit_expr}"
-            return sql
-
-        return str(stripped)
-
-    def print_startup_ui() -> None:
-        meta = Table.grid(expand=True)
-        meta.add_column(justify="left")
-        meta.add_column(justify="right")
-        meta.add_row(f"[bold]File[/bold] {file_path}", f"[bold]Rows[/bold] {row_count()}")
-        meta.add_row(f"[bold]Engine[/bold] DuckDB ({database})", f"[bold]Columns[/bold] {len(columns)}")
-        console.print(Panel(meta, title="Data Explorer", border_style="cyan"))
-        console.print(schema_table())
-        console.print(Panel(build_help_text(), title="Command Guide", border_style="blue"))
-
-        first_col = columns[0] if columns else "<col>"
-        numeric_col = next((col for col in columns if _is_numeric_type(column_types[col])), first_col)
-        hints = [
-            ":sample 10",
-            f'SELECT * FROM "{safe_table}" LIMIT 20;',
-            f":top {first_col} 10",
-            f":profile {numeric_col}",
-            ":describe",
-        ]
-        hint_lines = [f"  {idx}. {item}" for idx, item in enumerate(hints, start=1)]
-        console.print(Panel("\n".join(hint_lines), title="Try These First", border_style="green"))
-
-    non_interactive_sql = execute
-    if query_file is not None:
-        non_interactive_sql = query_file.read_text(encoding="utf-8").strip()
-
-    if non_interactive_sql is not None:
-        once_sql: str = str(non_interactive_sql).rstrip(";")
-        render_rows(once_sql, remember=False)
-        return
-
-    print_startup_ui()
-
-    while True:
-        try:
-            raw: str = str(session.prompt([("class:prompt", "sql> ")]))
-        except (EOFError, KeyboardInterrupt):
-            console.print("\n[cyan]Exiting SQL explorer.[/cyan]")
-            break
-
-        stripped: str = str(raw).strip()
-        if not stripped:
-            continue
-
-        if stripped in {":exit", ":quit"}:
-            break
-        if stripped == ":help":
-            console.print(Panel(build_help_text(), title="Command Guide", border_style="blue"))
-            continue
-        if stripped == ":schema":
-            console.print(schema_table())
-            continue
-        if stripped == ":clear":
-            console.clear()
-            continue
-        if stripped == ":last":
-            console.print(Panel(Syntax(last_sql, "sql", line_numbers=False), title="Last SQL", border_style="magenta"))
-            continue
-        if stripped.startswith(":history"):
-            parts = stripped.split()
-            count = 20
-            if len(parts) > 1:
-                try:
-                    count = max(1, int(parts[1]))
-                except ValueError:
-                    console.print("[red]Usage: :history [n][/red]")
-                    continue
-            history_queries = [str(item) for item in executed_sql]
-            if not history_queries:
-                console.print("[yellow]No SQL has been executed yet.[/yellow]")
-                continue
-            hist = Table(title="Query History", box=box.SIMPLE_HEAVY)
-            hist.add_column("#", justify="right")
-            hist.add_column("SQL")
-            for idx, sql in list(enumerate(history_queries, start=1))[-count:]:
-                hist.add_row(str(idx), _format_scalar(sql, 180))
-            console.print(hist)
-            continue
-        if stripped.startswith(":rerun"):
-            parts = stripped.split()
-            if len(parts) != 2:
-                console.print("[red]Usage: :rerun <n>[/red]")
-                continue
-            try:
-                idx = int(parts[1])
-            except ValueError:
-                console.print("[red]:rerun expects a numeric history index[/red]")
-                continue
-            history_queries = [str(item) for item in executed_sql]
-            history_size: int = len(history_queries)
-            if idx < 1 or idx > history_size:
-                console.print("[red]History index out of range.[/red]")
-                continue
-            rerun_sql: str = history_queries[idx - 1]
-            render_rows(rerun_sql, generated=True)
-            continue
-        if stripped.startswith(":page"):
-            parts = stripped.split(maxsplit=1)
-            if len(parts) != 2:
-                console.print("[red]Usage: :page <on|off>[/red]")
-                continue
-            parsed = _parse_toggle(parts[1])
-            if parsed is None:
-                console.print("[red]Usage: :page <on|off>[/red]")
-                continue
-            paging_enabled = parsed
-            console.print(f"[green]Paging {'enabled' if paging_enabled else 'disabled'}.[/green]")
-            continue
-        if stripped.startswith(":truncate"):
-            parts = stripped.split()
-            if len(parts) != 3:
-                console.print("[red]Usage: :truncate rows <n|off> OR :truncate values <n|off>[/red]")
-                continue
-            target = parts[1].lower()
-            value = parts[2].lower()
-            parsed_int: int | None
-            if value == "off":
-                parsed_int = None
-            else:
-                try:
-                    parsed_int = max(1, int(value))
-                except ValueError:
-                    console.print("[red]Truncation value must be an integer or off.[/red]")
-                    continue
-            if target == "rows":
-                max_rows_display = parsed_int
-                console.print(
-                    f"[green]Row truncation set to {'off' if max_rows_display is None else max_rows_display}.[/green]"
-                )
-                continue
-            if target == "values":
-                max_value_chars = parsed_int
-                console.print(
-                    f"[green]Value truncation set to {'off' if max_value_chars is None else max_value_chars}.[/green]"
-                )
-                continue
-            console.print("[red]Usage: :truncate rows <n|off> OR :truncate values <n|off>[/red]")
-            continue
-        if stripped.startswith(":width"):
-            parts = stripped.split(maxsplit=1)
-            if len(parts) != 2:
-                console.print("[red]Usage: :width <n|auto>[/red]")
-                continue
-            value = parts[1].strip().lower()
-            if value == "auto":
-                column_width = None
-                console.print("[green]Column width set to auto.[/green]")
-                continue
-            try:
-                column_width = max(1, int(value))
-            except ValueError:
-                console.print("[red]Usage: :width <n|auto>[/red]")
-                continue
-            console.print(f"[green]Column width set to {column_width}.[/green]")
-            continue
-        if stripped.startswith(":format"):
-            parts = stripped.split(maxsplit=1)
-            if len(parts) != 2:
-                console.print("[red]Usage: :format <table|csv|json|markdown>[/red]")
-                continue
-            chosen = parts[1].strip().lower()
-            if chosen not in {"table", "csv", "json", "markdown"}:
-                console.print("[red]Format must be one of: table, csv, json, markdown[/red]")
-                continue
-            output_format = chosen
-            console.print(f"[green]Output format set to {output_format}.[/green]")
-            continue
-        if stripped == ":show types":
-            show_type_summary()
-            continue
-        if stripped.startswith(":profile"):
-            payload = stripped.removeprefix(":profile").strip()
-            if not payload:
-                console.print("[red]Usage: :profile <col>[/red]")
-                continue
-            profile_column(payload)
-            continue
-        if stripped.startswith(":top"):
-            parts = stripped.split()
-            if len(parts) < 2 or len(parts) > 3:
-                console.print("[red]Usage: :top <col> [n][/red]")
-                continue
-            top_n = 10
-            if len(parts) == 3:
-                try:
-                    top_n = int(parts[2])
-                except ValueError:
-                    console.print("[red]Usage: :top <col> [n][/red]")
-                    continue
-            top_values(parts[1], top_n)
-            continue
-        if stripped == ":describe":
-            describe_dataset()
-            continue
-        if stripped.startswith(":save"):
-            payload = stripped.removeprefix(":save").strip()
-            if not payload:
-                console.print("[red]Usage: :save <path>[/red]")
-                continue
-            save_last_result(payload)
-            continue
-
-        sql_candidate: str | None = command_to_sql(stripped)
-        if sql_candidate is None:
-            continue
-
-        sql_text: str = sql_candidate.rstrip(";")
-        render_rows(sql_text, generated=stripped.startswith(":"))
+        SqlExplorerTui(engine).run()
+    finally:
+        engine.close()
 
 
 if __name__ == "__main__":
