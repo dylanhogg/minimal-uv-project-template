@@ -1,2 +1,0 @@
-uvx --from duckdb duckdb \
-  -c "SELECT * FROM read_parquet('./data/hf/rotten_tomatoes/train.parquet') LIMIT 20;"

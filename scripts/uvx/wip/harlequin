@@ -1,0 +1,2 @@
+# https://harlequin.sh/docs/adapters
+uvx harlequin --show-files ./data
