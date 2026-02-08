@@ -5,9 +5,12 @@ description = "My project description"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "duckdb>=1.4.1",
     "loguru>=0.7.3",
     "pydantic>=2.12.5",
+    "prompt-toolkit>=3.0.52",
     "python-dotenv>=1.2.1",
+    "rich>=14.2.0",
     "typer>=0.21.1",
 ]
 
@@ -21,6 +24,7 @@ dev = [
 
 [project.scripts]
 app = "my_project.app:app"
+sql = "my_project.sql:app"
 
 [tool.ruff]
 line-length = 120
