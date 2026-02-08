@@ -50,6 +50,7 @@ HELPER_COMMANDS = [
 SQL_KEYWORDS = [
     "SELECT",
     "FROM",
+    "DATA",
     "WHERE",
     "GROUP",
     "BY",
@@ -246,6 +247,8 @@ class SqlExplorerEngine:
                 "Ctrl+Enter run query",
                 "Ctrl+J sample query",
                 "Ctrl+K clear editor",
+                "Tab accept completion",
+                "Up/Down query history",
                 "Ctrl+H help",
                 "Ctrl+Q quit",
                 "",
@@ -289,6 +292,8 @@ class SqlExplorerEngine:
             ":last",
             ":clear",
             ":exit / :quit",
+            "",
+            "Editor: Tab completes; Up/Down cycles query history at first/last line.",
             "",
             f"settings: limit={self.default_limit}, rows={self.max_rows_display}, values={self.max_value_chars}",
         ]
@@ -631,9 +636,18 @@ class SqlExplorerEngine:
 
 
 class SqlQueryEditor(TextArea):
-    def __init__(self, text: str, token_provider: Callable[[], list[str]], **kwargs: Any) -> None:
-        super().__init__(text, language="sql", tab_behavior="indent", soft_wrap=False, **kwargs)
+    def __init__(
+        self,
+        text: str,
+        token_provider: Callable[[], list[str]],
+        history_prev: Callable[[], str | None],
+        history_next: Callable[[], str | None],
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(text, language="sql", theme="monokai", tab_behavior="indent", soft_wrap=False, **kwargs)
         self._token_provider = token_provider
+        self._history_prev = history_prev
+        self._history_next = history_next
         self.indent_width = 4
 
     async def _on_key(self, event: Any) -> None:
@@ -646,6 +660,32 @@ class SqlQueryEditor(TextArea):
                 self.insert(" " * self._find_columns_to_next_tab_stop())
             return
         await super()._on_key(event)
+
+    def action_cursor_up(self, select: bool = False) -> None:
+        if select:
+            super().action_cursor_up(select)
+            return
+        row, _ = self.cursor_location
+        if row == 0:
+            prior = self._history_prev()
+            if prior is not None:
+                self.load_text(prior)
+                self.move_cursor((self.document.line_count - 1, len(self.document[-1])))
+                return
+        super().action_cursor_up(select)
+
+    def action_cursor_down(self, select: bool = False) -> None:
+        if select:
+            super().action_cursor_down(select)
+            return
+        row, _ = self.cursor_location
+        if row == self.document.line_count - 1:
+            nxt = self._history_next()
+            if nxt is not None:
+                self.load_text(nxt)
+                self.move_cursor((self.document.line_count - 1, len(self.document[-1])))
+                return
+        super().action_cursor_down(select)
 
     def update_suggestion(self) -> None:
         row, col = self.cursor_location
@@ -725,21 +765,48 @@ class SqlExplorerTui(App[None]):
     """
 
     BINDINGS = [
-        Binding("ctrl+enter", "run_query", "Run"),
-        Binding("ctrl+j", "load_sample", "Sample"),
-        Binding("ctrl+k", "clear_editor", "Clear"),
-        Binding("ctrl+e", "focus_editor", "Editor"),
-        Binding("ctrl+r", "focus_results", "Results"),
-        Binding("ctrl+h", "show_help", "Help"),
-        Binding("ctrl+q", "quit", "Quit"),
+        Binding("ctrl+enter", "run_query", "Run", priority=True),
+        Binding("ctrl+j", "load_sample", "Sample", priority=True),
+        Binding("ctrl+k", "clear_editor", "Clear", priority=True),
+        Binding("ctrl+e", "focus_editor", "Editor", priority=True),
+        Binding("ctrl+r", "focus_results", "Results", priority=True),
+        Binding("ctrl+h", "show_help", "Help", priority=True),
+        Binding("ctrl+q", "quit", "Quit", priority=True),
     ]
 
     def __init__(self, engine: SqlExplorerEngine) -> None:
         super().__init__()
         self.engine = engine
+        self._history_cursor: int | None = None
+
+    def _reset_history_cursor(self) -> None:
+        self._history_cursor = None
+
+    def _history_prev(self) -> str | None:
+        history = self.engine.executed_sql
+        if not history:
+            return None
+        if self._history_cursor is None:
+            self._history_cursor = len(history) - 1
+        else:
+            self._history_cursor = (self._history_cursor - 1) % len(history)
+        return history[self._history_cursor]
+
+    def _history_next(self) -> str | None:
+        history = self.engine.executed_sql
+        if not history:
+            return None
+        if self._history_cursor is None:
+            self._history_cursor = 0
+        else:
+            self._history_cursor = (self._history_cursor + 1) % len(history)
+        return history[self._history_cursor]
 
     def _results_table(self) -> DataTable[str]:
         return cast(DataTable[str], self.query_one("#results_table", DataTable))
+
+    def _query_editor(self) -> SqlQueryEditor:
+        return self.query_one("#query_editor", SqlQueryEditor)
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -748,7 +815,13 @@ class SqlExplorerTui(App[None]):
                 yield Static(self.engine.schema_preview(), id="sidebar_text")
             with Vertical(id="workspace"):
                 yield Static("Query", classes="section-title")
-                yield SqlQueryEditor(self.engine.default_query, self.engine.completion_tokens, id="query_editor")
+                yield SqlQueryEditor(
+                    self.engine.default_query,
+                    self.engine.completion_tokens,
+                    self._history_prev,
+                    self._history_next,
+                    id="query_editor",
+                )
                 yield Static("Results", id="results_header", classes="section-title")
                 yield DataTable(id="results_table")
                 yield Static("Activity", classes="section-title")
@@ -761,26 +834,30 @@ class SqlExplorerTui(App[None]):
         self._log("Ready. Press Ctrl+Enter to run SQL, or Ctrl+H for command help.", "info")
         boot = self.engine.run_sql(self.engine.default_query, remember=False)
         self._apply_response(boot)
+        self._query_editor().focus()
 
     def action_run_query(self) -> None:
-        editor = self.query_one("#query_editor", TextArea)
+        editor = self._query_editor()
         query = editor.text
         response = self.engine.run_input(query)
+        self._reset_history_cursor()
         self._apply_response(response)
 
     def action_load_sample(self) -> None:
-        editor = self.query_one("#query_editor", TextArea)
+        editor = self._query_editor()
         editor.text = self.engine.default_query
+        self._reset_history_cursor()
         editor.focus()
         self._log("Loaded sample query.", "info")
 
     def action_clear_editor(self) -> None:
-        editor = self.query_one("#query_editor", TextArea)
+        editor = self._query_editor()
         editor.text = ""
+        self._reset_history_cursor()
         editor.focus()
 
     def action_focus_editor(self) -> None:
-        self.query_one("#query_editor", TextArea).focus()
+        self._query_editor().focus()
 
     def action_focus_results(self) -> None:
         self._results_table().focus()
@@ -799,8 +876,9 @@ class SqlExplorerTui(App[None]):
             self._log(response.message, response.status)
 
         if response.load_query is not None:
-            editor = self.query_one("#query_editor", TextArea)
+            editor = self._query_editor()
             editor.text = response.load_query
+            self._reset_history_cursor()
             editor.focus()
 
         if response.clear_editor:
