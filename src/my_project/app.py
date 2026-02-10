@@ -1,4 +1,6 @@
 import os
+import time
+from datetime import datetime
 
 import typer
 from dotenv import load_dotenv
@@ -15,12 +17,18 @@ app = typer.Typer(pretty_exceptions_enable=False, pretty_exceptions_show_locals=
 @app.command()
 def main(required_arg: str, optional_arg: str | None = None) -> int:
     log.configure()
+
+    run_id = f"{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    t0 = time.time()
+
     logger.info(f"Hello! {required_arg=}, {optional_arg=}")
     logger.info(f"PYTHONPATH={os.getenv('PYTHONPATH', 'Not set')}")
     logger.info(f"LOG_STDERR_LEVEL={os.getenv('LOG_STDERR_LEVEL', 'Not set. Copy `.env_template` to `.env`')}")
     logger.info(f"LOG_FILE_LEVEL={os.getenv('LOG_FILE_LEVEL', 'Not set. Copy `.env_template` to `.env`')}")
     # raise NotImplementedError("app.main() not implemented")
-    logger.info("Finished.")
+
+    took = time.time() - t0
+    logger.info(f"Run {run_id} finished in {took:.2f} seconds.")
     return 0
 
 

@@ -1,9 +1,5 @@
 import os
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
 
 def get(name: str, default: str | None = None) -> str | None:
     if os.getenv(name) is None and default is None:

@@ -27,7 +27,7 @@ cat > .vscode/launch.json << 'EOF'
                 "required_value",
                 "--optional-arg",
                 "opt_value"
-            ]
+            ],
             "justMyCode": true
         }
     ]

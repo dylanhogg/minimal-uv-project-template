@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+f="${1:-data.parquet}"
+
+case "$f" in
+  *.parquet|*.PARQUET) reader="read_parquet('$f')" ;;
+  *.csv|*.CSV|*.csv.gz|*.CSV.gz|*.csv.GZ|*.CSV.GZ)
+    reader="read_csv_auto('$f', header=true)"
+    ;;
+  *.tsv|*.TSV|*.tsv.gz|*.TSV.gz|*.tsv.GZ|*.TSV.GZ)
+    reader="read_csv_auto('$f', header=true, delim='\t')"
+    ;;
+  *) echo "Use: .parquet | .csv(.gz) | .tsv(.gz)" >&2; exit 2 ;;
+esac
+
+uvx --from duckdb duckdb -ui -echo \
+  -cmd "CREATE OR REPLACE VIEW data AS SELECT * FROM ${reader}; SELECT * FROM data LIMIT 10;"
