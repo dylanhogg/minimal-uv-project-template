@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Marimo notebook
+# https://docs.marimo.io/guides/
+
+uvx --from 'marimo[recommended]' \
+    --with pandas,numpy,pyarrow,mcp,pytest,python-lsp-server,websockets,loguru,pydantic,python-dotenv \
+    marimo new "Load parquet file: data/hf/gnaf-2022-structured-training-100000-v0/data/train-00000-of-00001.parquet"

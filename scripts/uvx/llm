@@ -1,3 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
 # datasette llm utility
 # https://llm.datasette.io/en/stable/usage.html
 
