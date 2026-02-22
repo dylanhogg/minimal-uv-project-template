@@ -29,7 +29,13 @@ run-as-docker:
 	docker compose run --rm app reqarg --optional-arg optarg
 
 test:
-	uv run pytest -vv --capture=no tests
+	uv run pytest -vv --capture=no --no-cov tests
+
+test-selected:
+	uv run pytest -vv --capture=no --no-cov tests -k "test_app"
+
+test-cov:
+	uv run pytest -vv --capture=no --cov-report=term-missing --cov-report=html tests
 
 test-as-docker:
 	docker compose run --rm tests
