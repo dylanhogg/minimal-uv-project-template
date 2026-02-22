@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Hugging Face datasets downloader
+# https://huggingface.co/docs/datasets/en/index
+
+DATASET="${1:-cornell-movie-review-data/rotten_tomatoes}"
+LOCAL_DIR="./data/hf/$(basename "$DATASET")"
+
+uvx hf auth login
+uvx hf download "$DATASET" \
+  --repo-type dataset \
+  --local-dir "$LOCAL_DIR"

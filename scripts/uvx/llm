@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# datasette llm utility
+# https://llm.datasette.io/en/stable/usage.html
+
+# uvx llm --help
+# uvx llm models
+# uvx llm keys
+# echo 'List 3 great gluten free dinner recipes' | llm -m gpt-5-nano
+
+uvx llm -m gpt-5-nano 'Concisely in 1 sentence, what benefits does the Python uv package manager have over pip, poetry and others?'

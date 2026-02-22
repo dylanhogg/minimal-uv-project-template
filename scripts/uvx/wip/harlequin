@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Harlequin TUI database client
+# https://harlequin.sh/docs/adapters
+uvx harlequin --show-files ./data

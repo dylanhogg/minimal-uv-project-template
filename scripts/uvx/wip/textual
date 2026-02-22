@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Textual cross-platform TUI and web user interfaces
+uvx --python 3.12 textual-demo

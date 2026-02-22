@@ -1,4 +1,5 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
 echo "Launch configuration creation..."
 
@@ -27,7 +28,7 @@ cat > .vscode/launch.json << 'EOF'
                 "required_value",
                 "--optional-arg",
                 "opt_value"
-            ]
+            ],
             "justMyCode": true
         }
     ]

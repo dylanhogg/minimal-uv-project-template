@@ -22,11 +22,11 @@ run:
 run-as-tool:
 	uv run app reqarg1 --optional-arg "optional arg"
 
-run-as-docker:
-	docker compose run --rm app reqarg --optional-arg optarg
-
 docker-build:
 	docker compose build --no-cache
+
+run-as-docker:
+	docker compose run --rm app reqarg --optional-arg optarg
 
 test:
 	uv run pytest -vv --capture=no tests

@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Marimo notebook
+# https://docs.marimo.io/guides/
+
+uvx --from 'marimo[recommended]' \
+    --with pandas,numpy,pyarrow,mcp,pytest,python-lsp-server,websockets,loguru,pydantic,python-dotenv \
+   marimo edit
