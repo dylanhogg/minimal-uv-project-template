@@ -1,6 +1,6 @@
 # minimal-uv-project-template
 
-A minimal quick-start Python project template, using [uv](https://github.com/astral-sh/uv) package manager.
+A minimal quick-start Python project template, using [uv](https://github.com/astral-sh/uv) package manager and a [src](https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/) layout.
 
 Uses the following 3rd party libraries:
 
@@ -20,4 +20,4 @@ Pre-commit hooks require a one-time setup: `uv run pre-commit install`
 
 See Makefile for quick utility commands for creation of venv, running the app, running tests, typechecking, pre-commit hooks etc.
 
-Includes project cursor rule files in `.cursor/rules`as per https://docs.cursor.com/context/rules
+Includes an AGENTS.md file for high-signal agents guide for working in this repo.
