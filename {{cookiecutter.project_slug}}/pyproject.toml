@@ -1,9 +1,12 @@
 [project]
-name = "my-project"
+name = "{{cookiecutter.project_slug}}"
 version = "0.1.0"
-description = "My project description"
+description = "{{cookiecutter.project_short_description}}"
 readme = "README.md"
 requires-python = ">=3.13"
+authors = [
+    { name = "{{cookiecutter.author_name}}", email = "{{cookiecutter.author_email}}" },
+]
 dependencies = [
     "loguru>=0.7.3",
     "pydantic>=2.12.5",
@@ -21,7 +24,7 @@ dev = [
 ]
 
 [project.scripts]
-app = "my_project.app:app"
+app = "{{cookiecutter.package_name}}.app:app"
 
 [tool.ruff]
 line-length = 120
@@ -50,15 +53,15 @@ typeCheckingMode = "strict"  # ["off", "basic", "standard", "strict"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
-addopts = "--cov=my_project --cov-report=term-missing"
+addopts = "--cov={{cookiecutter.package_name}} --cov-report=term-missing"
 
 [tool.coverage.run]
 branch = true
-source = ["my_project"]
+source = ["{{cookiecutter.package_name}}"]
 relative_files = true
 
 [tool.coverage.paths]
-source = ["src/my_project"]
+source = ["src/{{cookiecutter.package_name}}"]
 
 [tool.coverage.report]
 fail_under = 80

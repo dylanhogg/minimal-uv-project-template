@@ -6,7 +6,7 @@ import typer
 from dotenv import load_dotenv
 from loguru import logger
 
-from my_project.library import log
+from {{cookiecutter.package_name}}.library import log
 
 if not load_dotenv():
     logger.warning("Failed to load .env file")

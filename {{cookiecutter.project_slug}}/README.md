@@ -1,6 +1,8 @@
-# minimal-uv-project-template
+# {{cookiecutter.project_name}}
 
-A minimal quick-start Python project template, using [uv](https://github.com/astral-sh/uv) package manager and a [src](https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/) layout.
+{{cookiecutter.project_short_description}}
+
+A minimal quick-start Python project, using [uv](https://github.com/astral-sh/uv) package manager and a [src](https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/) layout.
 
 Uses the following 3rd party libraries:
 

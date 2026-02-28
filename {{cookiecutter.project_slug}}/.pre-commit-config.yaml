@@ -1,0 +1,31 @@
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-format
+        name: ruff-format (code formatting)
+        entry: uv run ruff format .
+        language: python
+        additional_dependencies: ["uv"]
+        types_or: [python, pyi]
+
+      - id: ruff-check
+        name: ruff-check (code linting)
+        entry: uv run ruff check .
+        language: python
+        additional_dependencies: ["uv"]
+        types_or: [python, pyi]
+
+      - id: pyright
+        name: pyright (static type checking)
+        entry: uv run pyright
+        language: python
+        additional_dependencies: ["uv"]
+        pass_filenames: false
+
+      - id: pytest
+        name: pytest (testing)
+        entry: uv run pytest -vv --capture=no tests
+        language: python
+        additional_dependencies: ["uv"]
+        pass_filenames: false
+        always_run: true

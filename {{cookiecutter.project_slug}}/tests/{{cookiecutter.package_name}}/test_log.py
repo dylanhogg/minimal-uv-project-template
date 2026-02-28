@@ -2,7 +2,7 @@ from typing import Any
 
 import pytest
 
-from my_project.library import log
+from {{cookiecutter.package_name}}.library import log
 
 
 def test_log_configure_uses_defaults_and_removes_existing(monkeypatch: pytest.MonkeyPatch) -> None:

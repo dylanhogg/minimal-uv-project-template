@@ -1,4 +1,4 @@
-name: CI
+name: Template CI
 
 on:
   push:
@@ -13,9 +13,13 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  ci:
-    name: CI Checks
-    runs-on: ubuntu-latest
+  validate-template:
+    name: Validate Template
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
 
     steps:
       - name: Checkout
@@ -25,30 +29,35 @@ jobs:
         uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
-          cache-dependency-glob: |
-            pyproject.toml
-            uv.lock
 
       - name: Install Python 3.13
         run: uv python install 3.13
 
-      - name: uv sync (install dependencies)
-        run: uv sync --frozen --all-groups
+      - name: Validate hook syntax
+        run: python3 -m py_compile hooks/pre_gen_project.py hooks/post_gen_project.py
 
-      - name: ruff-format (code formatting)
-        run: uv run ruff format .
+      - name: Render default template
+        run: |
+          rm -rf /tmp/my-project
+          uvx cookiecutter --no-input . -o /tmp
 
-      - name: ruff-check (code linting)
-        run: uv run ruff check .
+      - name: Smoke test default scaffold
+        working-directory: /tmp/my-project
+        run: |
+          uv sync --all-groups
+          uv run app reqarg1 --optional-arg optarg1
+          uv run python -m my_project.app reqarg1 --optional-arg optarg1
+          uv run pytest -q tests
 
-      - name: pyright (static type checking)
-        run: uv run pyright
+      - name: Render custom-slug template
+        run: |
+          rm -rf /tmp/acme-tool
+          uvx cookiecutter --no-input . -o /tmp project_slug=acme-tool
 
-      - name: pytest (testing + coverage)
-        run: uv run pytest -vv --cov-report=xml tests
-
-      - name: Upload coverage artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-xml
-          path: coverage.xml
+      - name: Smoke test custom-slug scaffold
+        working-directory: /tmp/acme-tool
+        run: |
+          uv sync --all-groups
+          uv run app reqarg1 --optional-arg optarg1
+          uv run python -m acme_tool.app reqarg1 --optional-arg optarg1
+          uv run pytest -q tests

@@ -6,18 +6,17 @@ venv:
 	# $ curl -LsSf https://astral.sh/uv/install.sh | sh
 	# Other recommended libraries, add with `uv add <library>`:
 	# tenacity, joblib, jupyterlab, litellm, datasets, pytorch, fastapi, uvicorn, rich
-	uv sync
+	uv sync --all-groups
 	uv pip install -e .
 
 which-python:
-	uv run which python | pbcopy
 	uv run which python
 
 clean:
 	rm -rf .venv
 
 run:
-	uv run python -m my_project.app reqarg1 --optional-arg "optional arg"
+	uv run python -m {{cookiecutter.package_name}}.app reqarg1 --optional-arg "optional arg"
 
 run-as-tool:
 	uv run app reqarg1 --optional-arg "optional arg"
