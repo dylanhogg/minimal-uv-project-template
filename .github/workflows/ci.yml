@@ -44,5 +44,11 @@ jobs:
       - name: pyright (static type checking)
         run: uv run pyright
 
-      - name: pytest (testing)
-        run: uv run pytest -vv tests
+      - name: pytest (testing + coverage)
+        run: uv run pytest -vv --cov-report=xml tests
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml

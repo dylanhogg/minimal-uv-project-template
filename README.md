@@ -12,6 +12,7 @@ Uses the following 3rd party libraries:
 - DEV - https://github.com/astral-sh/ruff - Extremely fast Python linter and code formatter
 - DEV - https://github.com/microsoft/pyright - Static type checker for Python
 - DEV - https://github.com/pytest-dev/pytest - makes it easy to write small tests, yet scales to support complex functional testing
+- DEV - https://github.com/pytest-dev/pytest-cov - Unit test coverage for pytest
 - DEV - https://github.com/pre-commit/pre-commit - A framework for managing pre-commit hooks
 
 Create venv virtual environment with `uv sync`
