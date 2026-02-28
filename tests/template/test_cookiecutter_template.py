@@ -1,16 +1,7 @@
 from __future__ import annotations
 
 import subprocess
-import warnings
 from pathlib import Path
-
-# cookiecutter imports requests, which emits this known dependency warning in some ephemeral uv envs.
-warnings.filterwarnings(
-    "ignore",
-    message=r".*doesn't match a supported version.*",
-    category=Warning,
-    module=r"requests",
-)
 
 from cookiecutter.main import cookiecutter
 
@@ -86,6 +77,8 @@ def run_cmd(project_dir: Path, *cmd: str) -> None:
 def smoke_test_runtime(project_dir: Path, package_name: str) -> None:
     run_cmd(project_dir, "uv", "sync", "--all-groups")
     run_cmd(project_dir, "uv", "sync", "--frozen", "--all-groups")
+    run_cmd(project_dir, "uv", "run", "ruff", "check", ".")
+    run_cmd(project_dir, "uv", "run", "pyright")
     run_cmd(project_dir, "uv", "run", "app", "reqarg1", "--optional-arg", "optarg1")
     run_cmd(
         project_dir,

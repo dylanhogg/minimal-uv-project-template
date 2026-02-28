@@ -5,7 +5,7 @@ PYTEST_VERSION ?= 9.0.2
 TMP_PROJECT_DIR ?= /tmp/my-project
 
 template-test:
-	uv run --with pytest==$(PYTEST_VERSION) --with cookiecutter==$(COOKIECUTTER_VERSION) pytest -q tests/template
+	uv run --with pytest==$(PYTEST_VERSION) --with cookiecutter==$(COOKIECUTTER_VERSION) --with 'chardet<6' pytest -q tests/template
 
 template-precommit:
 	uv run pre-commit run --all-files

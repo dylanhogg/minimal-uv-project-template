@@ -48,7 +48,7 @@ This file contains guidelines for AI agents to follow when writing code in this 
 - Use `numpy` for scientific computing
 - Use `fastapi` for REST API endpoints
 - Use `litellm` as an LLM wrapper
-- Use `uvicorn` as an ASGI web server (and `uvloop` if approprite)
+- Use `uvicorn` as an ASGI web server (and `uvloop` if appropriate)
 - Use `joblib` for lightweight pipelining & caching
 - Use `pytorch` for machine learning
 - Use `transformers` for nlp, llms, and models
@@ -70,8 +70,8 @@ This file contains guidelines for AI agents to follow when writing code in this 
 
 ## Project Structure
 
-- Keep source code in a `./src/<package_name>/` directory.
-- Place tests in a `./tests/<package_name>/` directory.
+- Keep source code in a `./src/{{ cookiecutter.package_name }}/` directory.
+- Place tests in a `./tests/{{ cookiecutter.package_name }}/` directory.
 - Keep configuration files in the root directory.
 - See below for more details on testing, linting, and type checking.
 - See `Makefile` for additional project management commands.
@@ -92,7 +92,7 @@ This file contains guidelines for AI agents to follow when writing code in this 
 - Use `pytest-cov` for code coverage reporting.
 - Follow the naming convention: test_*.py.
 - Use fixtures for test setup and teardown.
-- Place test files in `./tests/<package_name>/`.
+- Place test files in `./tests/{{ cookiecutter.package_name }}/`.
 
 ## Linting
 

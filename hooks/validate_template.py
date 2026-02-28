@@ -6,6 +6,9 @@ from pathlib import Path
 
 from cookiecutter.main import cookiecutter
 
+SMOKE_PROJECT_SLUG = "precommit-smoke-template"
+SMOKE_PACKAGE_NAME = "precommit_smoke_template"
+
 
 def main() -> int:
     repo_root = Path(__file__).resolve().parents[1]
@@ -16,14 +19,18 @@ def main() -> int:
             no_input=True,
             output_dir=temp_dir,
             overwrite_if_exists=True,
+            extra_context={
+                "project_slug": SMOKE_PROJECT_SLUG,
+                "package_name": SMOKE_PACKAGE_NAME,
+            },
         )
 
-        generated_root = Path(temp_dir) / "my-project"
+        generated_root = Path(temp_dir) / SMOKE_PROJECT_SLUG
         required_files = [
             generated_root / "pyproject.toml",
             generated_root / "Makefile",
-            generated_root / "src" / "my_project" / "app.py",
-            generated_root / "tests" / "my_project" / "test_app.py",
+            generated_root / "src" / SMOKE_PACKAGE_NAME / "app.py",
+            generated_root / "tests" / SMOKE_PACKAGE_NAME / "test_app.py",
         ]
         missing = [str(path.relative_to(generated_root)) for path in required_files if not path.exists()]
         if missing:

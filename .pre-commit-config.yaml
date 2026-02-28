@@ -10,5 +10,5 @@ repos:
         name: template-render-smoke
         entry: python3 hooks/validate_template.py
         language: python
-        additional_dependencies: ["cookiecutter==2.6.0"]
+        additional_dependencies: ["cookiecutter==2.6.0", "chardet<6"]
         pass_filenames: false

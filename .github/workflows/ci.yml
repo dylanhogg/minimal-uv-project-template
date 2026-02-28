@@ -38,7 +38,7 @@ jobs:
 
       - name: Template parity tests
         run: |
-          uv run --with pytest==9.0.2 --with cookiecutter==2.6.0 pytest -q tests/template
+          uv run --with pytest==9.0.2 --with cookiecutter==2.6.0 --with "chardet<6" pytest -q tests/template
 
       - name: Render default scaffold (ubuntu docker parity)
         if: matrix.os == 'ubuntu-latest'
