@@ -3,6 +3,8 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import pytest
+from cookiecutter.exceptions import FailedHookException
 from cookiecutter.main import cookiecutter
 
 
@@ -125,3 +127,8 @@ def test_custom_slug_with_package_override(tmp_path: Path) -> None:
     assert_no_unrendered_tokens(project_dir)
     assert_package_wiring(project_dir, project_slug, package_name)
     smoke_test_runtime(project_dir, package_name)
+
+
+def test_invalid_author_email_fails_pre_gen(tmp_path: Path) -> None:
+    with pytest.raises(FailedHookException):
+        render_template(tmp_path, author_email="not-an-email")
