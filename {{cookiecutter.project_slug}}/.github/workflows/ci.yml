@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+{% raw %}
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: CI Checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+
+      - name: Install Python 3.13
+        run: uv python install 3.13
+
+      - name: uv sync (install dependencies)
+        run: uv sync --frozen --all-groups
+
+      - name: ruff-format (code formatting)
+        run: uv run ruff format .
+
+      - name: ruff-check (code linting)
+        run: uv run ruff check .
+
+      - name: pyright (static type checking)
+        run: uv run pyright
+
+      - name: pytest (testing + coverage)
+        run: uv run pytest -vv --cov-report=xml tests
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+{% endraw %}

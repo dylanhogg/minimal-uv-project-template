@@ -1,24 +1,89 @@
-# minimal-uv-project-template
+# Minimal UV Project Template (Cookiecutter)
 
-A minimal quick-start Python project template, using [uv](https://github.com/astral-sh/uv) package manager and a [src](https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/) layout.
+A minimal quick-start Python project template powered by [Cookiecutter](https://cookiecutter.readthedocs.io/), using [uv](https://github.com/astral-sh/uv) and a [src layout](https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/).
 
-Uses the following 3rd party libraries:
+This repository is the template source. Running Cookiecutter generates a new runnable project with the same behavior as the original template.
 
-- APP - https://github.com/tiangolo/typer - For building CLI applications
-- APP - https://github.com/Delgan/loguru - Python logging made (stupidly) simple
-- APP - https://github.com/theskumar/python-dotenv - Reads key-value pairs `.env` file and sets environment vars
-- APP - https://github.com/pydantic/pydantic - Data validation and settings management using Python type annotations
-- DEV - https://github.com/astral-sh/uv - An extremely fast Python package manager
-- DEV - https://github.com/astral-sh/ruff - Extremely fast Python linter and code formatter
-- DEV - https://github.com/microsoft/pyright - Static type checker for Python
-- DEV - https://github.com/pytest-dev/pytest - makes it easy to write small tests, yet scales to support complex functional testing
-- DEV - https://github.com/pytest-dev/pytest-cov - Unit test coverage for pytest
-- DEV - https://github.com/pre-commit/pre-commit - A framework for managing pre-commit hooks
+## Generated Project Stack
 
-Create venv virtual environment with `uv sync`
+Generated projects use the following libraries by default:
 
-Pre-commit hooks require a one-time setup: `uv run pre-commit install`
+- APP - https://github.com/tiangolo/typer - CLI app framework
+- APP - https://github.com/Delgan/loguru - logging
+- APP - https://github.com/theskumar/python-dotenv - `.env` loading
+- APP - https://github.com/pydantic/pydantic - data validation
+- DEV - https://github.com/astral-sh/uv - package and environment management
+- DEV - https://github.com/astral-sh/ruff - linting and formatting
+- DEV - https://github.com/microsoft/pyright - type checking
+- DEV - https://github.com/pytest-dev/pytest - tests
+- DEV - https://github.com/pytest-dev/pytest-cov - test coverage
+- DEV - https://github.com/pre-commit/pre-commit - git hooks
 
-See Makefile for quick utility commands for creation of venv, running the app, running tests, typechecking, pre-commit hooks etc.
+Generated projects also include:
 
-Includes an AGENTS.md file for high-signal agents guide for working in this repo.
+- Docker (`Dockerfile`, `docker-compose.yml`)
+- GitHub Actions CI
+- VS Code launch helper (`scripts/vscode_launch.sh`)
+
+Primary target platform is macOS and Linux.
+
+## Scaffold A New Project
+
+From this local repo:
+
+```bash
+uvx cookiecutter==2.6.0 .
+```
+
+From GitHub:
+
+```bash
+uvx cookiecutter==2.6.0 https://github.com/dylanhogg/minimal-uv-project-template.git
+```
+
+Non-interactive with defaults:
+
+```bash
+uvx cookiecutter==2.6.0 . --no-input -o /tmp
+```
+
+## Template Variables
+
+- `project_name`: Human-readable name (example: `Awesome Stuff`)
+- `project_slug`: Filesystem/project id, default derived from `project_name`
+- `package_name`: Python package/module name, default `project_slug.replace('-', '_')`
+- `project_short_description`: Short project summary
+- `author_name`: Author display name
+- `author_email`: Author email
+
+Validation rules enforced at render time:
+
+- `project_slug` must match `^[a-z][a-z0-9_-]*$`
+- `package_name` must match `^[a-z][a-z0-9_]*$`
+
+## Generated Project Quick Start
+
+After scaffold:
+
+```bash
+cd <project_slug>
+cp .env_template .env
+uv sync --all-groups
+uv pip install -e .
+uv run app reqarg1 --optional-arg optarg1
+uv run python -m <package_name>.app reqarg1 --optional-arg optarg1
+uv run pytest -q tests
+```
+
+## Validate This Template Repo
+
+Root Make targets:
+
+```bash
+make template-test           # render + parity tests
+make template-precommit      # root pre-commit hooks
+make template-docker-smoke   # docker parity smoke on generated output
+make template-all            # all of the above
+```
+
+CI enforces template parity on macOS and Linux, with Docker parity smoke on Ubuntu.

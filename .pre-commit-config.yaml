@@ -1,31 +1,14 @@
 repos:
   - repo: local
     hooks:
-      - id: ruff-format
-        name: ruff-format (code formatting)
-        entry: uv run ruff format .
-        language: python
-        additional_dependencies: ["uv"]
-        types_or: [python, pyi]
-
-      - id: ruff-check
-        name: ruff-check (code linting)
-        entry: uv run ruff check .
-        language: python
-        additional_dependencies: ["uv"]
-        types_or: [python, pyi]
-
-      - id: pyright
-        name: pyright (static type checking)
-        entry: uv run pyright
-        language: python
-        additional_dependencies: ["uv"]
+      - id: hooks-py-compile
+        name: hooks-py-compile
+        entry: python3 -m py_compile hooks/pre_gen_project.py hooks/post_gen_project.py
+        language: system
         pass_filenames: false
-
-      - id: pytest
-        name: pytest (testing)
-        entry: uv run pytest -vv --capture=no tests
+      - id: template-render-smoke
+        name: template-render-smoke
+        entry: python3 hooks/validate_template.py
         language: python
-        additional_dependencies: ["uv"]
+        additional_dependencies: ["cookiecutter==2.6.0", "chardet<6"]
         pass_filenames: false
-        always_run: true

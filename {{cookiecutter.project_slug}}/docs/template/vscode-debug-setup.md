@@ -14,7 +14,7 @@ Minimal set of configuration options:
             "name": "Python Debugger: Module",
             "type": "debugpy",
             "request": "launch",
-            "module": "my_project.app",
+            "module": "{{cookiecutter.package_name}}.app",
             "cwd": "${workspaceFolder}",
             "envFile": "${workspaceFolder}/.env",
             "args": [
@@ -38,7 +38,7 @@ Extended set of configuration options:
             "name": "Python Debugger: Module",
             "type": "debugpy",
             "request": "launch",
-            "module": "my_project.app",
+            "module": "{{cookiecutter.package_name}}.app",
             "cwd": "${workspaceFolder}",
             "envFile": "${workspaceFolder}/.env",
             "python": "${command:python.interpreterPath}",
