@@ -23,13 +23,13 @@ Two staged PRs:
   - same VSCode debug module wiring
 
 ## Proposed Template Variables (Balanced Coverage)
-Use 6 variables (5 user inputs + 1 derived/locked value). Enough for identity/metadata; avoid feature toggles.
+Use 6 variables. Enough for identity/metadata; avoid feature toggles.
 
 | Variable | Type | Default | Why |
 |---|---|---|---|
 | `project_name` | str | `My Project` | Human-readable project title |
 | `project_slug` | str | `my-project` | Repo/package root folder name |
-| `package_name` | str | `{{ cookiecutter.project_slug.replace('-', '_') }}` | Python import package (locked to derived default) |
+| `package_name` | str | `{{ cookiecutter.project_slug.replace('-', '_') }}` | Python import package (derived default; override allowed) |
 | `project_short_description` | str | `My project description` | `pyproject.toml` metadata |
 | `author_name` | str | `Your Name` | Package metadata |
 | `author_email` | str | `you@example.com` | Package metadata |
@@ -58,7 +58,6 @@ Use 6 variables (5 user inputs + 1 derived/locked value). Enough for identity/me
 4. Add robust hooks (Python, stdlib-only).
 - `hooks/pre_gen_project.py`:
   - Validate slug/package patterns (`^[a-z][a-z0-9_-]*$` for slug, `^[a-z][a-z0-9_]*$` for package).
-  - Enforce lock: `package_name` must equal `project_slug.replace('-', '_')`.
   - Fail fast with clear errors.
 - `hooks/post_gen_project.py`:
   - Verify key files exist after render and fail with clear error if not.
@@ -75,24 +74,25 @@ Use 6 variables (5 user inputs + 1 derived/locked value). Enough for identity/me
 - Add template-level tests (pytest) that run cookiecutter generation in temp dirs for at least:
   - Default config.
   - Custom `project_slug` with derived `package_name`.
-  - Negative case: custom `project_slug` + mismatched `package_name` fails pre-gen validation.
+  - Custom `project_slug` + explicit `package_name` override.
 - Assertions:
   - Expected files exist (Docker and GitHub Actions always present).
   - No unrendered `{{ cookiecutter.* }}` remains.
   - Generated `pyproject.toml` reflects chosen vars.
-  - Generated import paths and module references match `package_name`.
+  - Generated import paths and module references match `package_name` (including override case).
   - Smoke commands succeed in generated output:
     - `uv sync --all-groups`
     - `uv run app reqarg1 --optional-arg optarg1`
     - `uv run python -m {{cookiecutter.package_name}}.app reqarg1 --optional-arg optarg1`
     - `uv run pytest -q tests`
-    - `docker compose run --rm app reqarg1 --optional-arg optarg1`
+    - `docker compose run --rm app reqarg1 --optional-arg optarg1` (ubuntu CI job)
 
 7. CI update for template repo.
-- Add job to execute template tests on `ubuntu-latest` and `macos-latest`.
-- Keep lint/type/tests for template code itself.
+- Extend existing root Template CI to execute template tests on `ubuntu-latest` and `macos-latest`.
+- Keep lint/type/tests for template code itself; do not create duplicate workflows.
 - In generated-project validation, run first `uv sync --all-groups` to refresh lockfile, then `uv sync --frozen --all-groups`.
-- Docker parity is mandatory in CI: run generated-project Docker Compose smoke test in CI (required check).
+- Pin cookiecutter version in CI render steps (same as local pre-commit smoke).
+- Docker parity is mandatory in CI on `ubuntu-latest`: run generated-project Docker Compose smoke test there as a required check.
 - Do not run heavyweight network/install steps inside hooks.
 
 8. Cleanup and guardrails.

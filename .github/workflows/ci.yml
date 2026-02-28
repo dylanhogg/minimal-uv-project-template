@@ -36,28 +36,21 @@ jobs:
       - name: Validate hook syntax
         run: python3 -m py_compile hooks/pre_gen_project.py hooks/post_gen_project.py
 
-      - name: Render default template
+      - name: Template parity tests
+        run: |
+          uv run --with pytest==9.0.2 --with cookiecutter==2.6.0 pytest -q tests/template
+
+      - name: Render default scaffold (ubuntu docker parity)
+        if: matrix.os == 'ubuntu-latest'
         run: |
           rm -rf /tmp/my-project
-          uvx cookiecutter --no-input . -o /tmp
+          uvx cookiecutter==2.6.0 --no-input . -o /tmp
 
-      - name: Smoke test default scaffold
+      - name: Docker parity smoke (ubuntu required)
+        if: matrix.os == 'ubuntu-latest'
         working-directory: /tmp/my-project
         run: |
+          cp .env_template .env
           uv sync --all-groups
-          uv run app reqarg1 --optional-arg optarg1
-          uv run python -m my_project.app reqarg1 --optional-arg optarg1
-          uv run pytest -q tests
-
-      - name: Render custom-slug template
-        run: |
-          rm -rf /tmp/acme-tool
-          uvx cookiecutter --no-input . -o /tmp project_slug=acme-tool
-
-      - name: Smoke test custom-slug scaffold
-        working-directory: /tmp/acme-tool
-        run: |
-          uv sync --all-groups
-          uv run app reqarg1 --optional-arg optarg1
-          uv run python -m acme_tool.app reqarg1 --optional-arg optarg1
-          uv run pytest -q tests
+          uv sync --frozen --all-groups
+          docker compose run --rm app reqarg1 --optional-arg optarg1
