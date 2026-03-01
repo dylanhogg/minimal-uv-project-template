@@ -6,8 +6,7 @@ venv:
 	# $ curl -LsSf https://astral.sh/uv/install.sh | sh
 	# Other recommended libraries, add with `uv add <library>`:
 	# tenacity, joblib, jupyterlab, litellm, datasets, pytorch, fastapi, uvicorn, rich
-	uv sync --all-groups
-	uv pip install -e .
+	uv sync --all-packages --all-groups
 
 which-python:
 	uv run which python
@@ -16,7 +15,7 @@ clean:
 	rm -rf .venv
 
 run:
-	uv run python -m {{cookiecutter.package_name}}.app reqarg1 --optional-arg "optional arg"
+	uv run python -m {{cookiecutter.app_package}}.app reqarg1 --optional-arg "optional arg"
 
 run-as-tool:
 	uv run app reqarg1 --optional-arg "optional arg"
@@ -28,13 +27,13 @@ run-as-docker:
 	docker compose run --rm app reqarg --optional-arg optarg
 
 test:
-	uv run pytest -vv --capture=no --no-cov tests
+	uv run pytest -vv --capture=no --no-cov
 
 test-selected:
-	uv run pytest -vv --capture=no --no-cov tests -k "test_app"
+	uv run pytest -vv --capture=no --no-cov -k "test_app"
 
 test-cov:
-	uv run pytest -vv --capture=no --cov-report=term-missing --cov-report=html tests
+	uv run pytest -vv --capture=no --cov-report=term-missing --cov-report=html
 
 test-as-docker:
 	docker compose run --rm tests

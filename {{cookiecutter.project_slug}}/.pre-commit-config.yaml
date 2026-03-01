@@ -24,7 +24,7 @@ repos:
 
       - id: pytest
         name: pytest (testing)
-        entry: uv run pytest -vv --capture=no tests
+        entry: uv run pytest -vv --capture=no
         language: python
         additional_dependencies: ["uv"]
         pass_filenames: false

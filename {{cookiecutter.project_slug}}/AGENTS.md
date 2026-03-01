@@ -70,8 +70,9 @@ This file contains guidelines for AI agents to follow when writing code in this 
 
 ## Project Structure
 
-- Keep source code in a `./src/{{ cookiecutter.package_name }}/` directory.
-- Place tests in a `./tests/{{ cookiecutter.package_name }}/` directory.
+- Keep app source code in `./apps/{{ cookiecutter.app_slug }}/src/{{ cookiecutter.app_package }}/`.
+- Keep shared library source code in `./packages/{{ cookiecutter.lib_slug }}/src/{{ cookiecutter.lib_package }}/`.
+- Place tests in `./apps/{{ cookiecutter.app_slug }}/tests/` and `./packages/{{ cookiecutter.lib_slug }}/tests/`.
 - Keep configuration files in the root directory.
 - See below for more details on testing, linting, and type checking.
 - See `Makefile` for additional project management commands.
@@ -79,12 +80,12 @@ This file contains guidelines for AI agents to follow when writing code in this 
 ## Package Management with uv
 
 - Package management is via `uv`.
-- Create venv and install deps with `uv sync`.
-- Install project in editable mode with `uv pip install -e . --no-deps`.
+- Create venv and install deps with `uv sync --all-packages --all-groups`.
+- Sync the workspace and members with `uv sync --all-packages --all-groups`.
 - Manage dependencies via `pyproject.toml`, with dev dependencies in the `[dependency-groups]` section.
 - Add runtime dependencies: `uv add <pkg>`.
 - Add dev dependencies: `uv add --group dev <pkg>`.
-- Sync lockfile: `uv sync`.
+- Sync lockfile: `uv sync --all-packages --all-groups`.
 
 ## Tests
 
@@ -92,7 +93,7 @@ This file contains guidelines for AI agents to follow when writing code in this 
 - Use `pytest-cov` for code coverage reporting.
 - Follow the naming convention: test_*.py.
 - Use fixtures for test setup and teardown.
-- Place test files in `./tests/{{ cookiecutter.package_name }}/`.
+- Place test files in `./apps/{{ cookiecutter.app_slug }}/tests/ and ./packages/{{ cookiecutter.lib_slug }}/tests/`.
 
 ## Linting
 

@@ -14,7 +14,7 @@ Minimal set of configuration options:
             "name": "Python Debugger: Module",
             "type": "debugpy",
             "request": "launch",
-            "module": "{{cookiecutter.package_name}}.app",
+            "module": "{{cookiecutter.app_package}}.app",
             "cwd": "${workspaceFolder}",
             "envFile": "${workspaceFolder}/.env",
             "args": [
@@ -38,14 +38,14 @@ Extended set of configuration options:
             "name": "Python Debugger: Module",
             "type": "debugpy",
             "request": "launch",
-            "module": "{{cookiecutter.package_name}}.app",
+            "module": "{{cookiecutter.app_package}}.app",
             "cwd": "${workspaceFolder}",
             "envFile": "${workspaceFolder}/.env",
             "python": "${command:python.interpreterPath}",
 
-            "console": "integratedTerminal",  // better for CLI apps
+            "console": "integratedTerminal",
             "autoReload": {
-                "enable": true  // reload of the debugger when changes are made
+                "enable": true
             },
             "internalConsoleOptions": "neverOpen",
 
@@ -56,13 +56,13 @@ Extended set of configuration options:
             ],
 
             "env": {
-                "PYTHONPATH": "${workspaceFolder}/src",
-                "PYTHONUNBUFFERED": "1",  // log output appear immediately
-                "PYTHONASYNCIODEBUG": "1"  // asyncio debugging
+                "PYTHONPATH": "${workspaceFolder}/apps/{{cookiecutter.app_slug}}/src:${workspaceFolder}/packages/{{cookiecutter.lib_slug}}/src",
+                "PYTHONUNBUFFERED": "1",
+                "PYTHONASYNCIODEBUG": "1"
             },
 
             "justMyCode": true,
-            "subProcess": true  // debugger follows subprocesses
+            "subProcess": true
         }
     ]
 }
@@ -73,7 +73,6 @@ Extended set of configuration options:
 https://devblogs.microsoft.com/python/python-in-visual-studio-code-february-2024-release/
 
 From Jan 2024, ensure you are using the new Python Debugger extension, replace `"type": "python"` with `"type": "debugpy"` in your launch.json configuration file. In the future, the Python extension will no longer offer debugging support, and we will transition all debugging support to the Python Debugger extension.
-
 
 ## References
 

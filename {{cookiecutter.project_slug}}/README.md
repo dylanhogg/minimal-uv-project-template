@@ -2,7 +2,12 @@
 
 {{cookiecutter.project_short_description}}
 
-A minimal quick-start Python project, using [uv](https://github.com/astral-sh/uv) package manager and a [src](https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/) layout.
+A minimal uv workspace monorepo with one app package and one shared library package.
+
+Workspace layout:
+
+- `apps/{{cookiecutter.app_slug}}` - CLI app package
+- `packages/{{cookiecutter.lib_slug}}` - shared library package
 
 Uses the following 3rd party libraries:
 
@@ -17,10 +22,15 @@ Uses the following 3rd party libraries:
 - DEV - https://github.com/pytest-dev/pytest-cov - Unit test coverage for pytest
 - DEV - https://github.com/pre-commit/pre-commit - A framework for managing pre-commit hooks
 
-Create venv virtual environment with `uv sync`
+Create virtual environment and install workspace dependencies with `uv sync --all-packages --all-groups`.
 
-Pre-commit hooks require a one-time setup: `uv run pre-commit install`
+Pre-commit hooks require a one-time setup: `uv run pre-commit install`.
 
-See Makefile for quick utility commands for creation of venv, running the app, running tests, typechecking, pre-commit hooks etc.
+Run the app with:
+
+- `uv run app reqarg1 --optional-arg optarg1`
+- `uv run python -m {{cookiecutter.app_package}}.app reqarg1 --optional-arg optarg1`
+
+See Makefile for quick utility commands for running the app, tests, type checking, and pre-commit hooks.
 
 Includes an AGENTS.md file for high-signal agents guide for working in this repo.

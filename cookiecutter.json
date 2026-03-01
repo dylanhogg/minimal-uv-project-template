@@ -1,7 +1,10 @@
 {
   "project_name": "My Project",
   "project_slug": "{{ cookiecutter.project_name|lower|replace(' ', '-')|replace('_', '-') }}",
-  "package_name": "{{ cookiecutter.project_slug.replace('-', '_') }}",
+  "app_slug": "{{ cookiecutter.project_slug }}",
+  "app_package": "{{ cookiecutter.app_slug.replace('-', '_') }}",
+  "lib_slug": "{{ cookiecutter.app_slug }}-core",
+  "lib_package": "{{ cookiecutter.app_package }}_core",
   "project_short_description": "My project description",
   "author_name": "Your Name",
   "author_email": "you@example.com"

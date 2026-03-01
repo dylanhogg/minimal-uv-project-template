@@ -1,0 +1,25 @@
+[project]
+name = "{{cookiecutter.app_slug}}"
+version = "0.1.0"
+description = "Application package"
+requires-python = ">=3.13"
+dependencies = [
+    "{{cookiecutter.lib_slug}}",
+    "loguru>=0.7.3",
+    "pydantic>=2.12.5",
+    "python-dotenv>=1.2.1",
+    "typer>=0.21.1",
+]
+
+[project.scripts]
+app = "{{cookiecutter.app_package}}.app:app"
+
+[tool.uv.sources]
+"{{cookiecutter.lib_slug}}" = { workspace = true }
+
+[build-system]
+requires = ["hatchling>=1.24.2"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/{{cookiecutter.app_package}}"]

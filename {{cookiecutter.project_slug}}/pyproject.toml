@@ -1,5 +1,5 @@
 [project]
-name = "{{cookiecutter.project_slug}}"
+name = "{{cookiecutter.project_slug}}-workspace"
 version = "0.1.0"
 description = "{{cookiecutter.project_short_description}}"
 readme = "README.md"
@@ -7,12 +7,7 @@ requires-python = ">=3.13"
 authors = [
     { name = "{{cookiecutter.author_name}}", email = "{{cookiecutter.author_email}}" },
 ]
-dependencies = [
-    "loguru>=0.7.3",
-    "pydantic>=2.12.5",
-    "python-dotenv>=1.2.1",
-    "typer>=0.21.1",
-]
+dependencies = []
 
 [dependency-groups]
 dev = [
@@ -22,9 +17,6 @@ dev = [
     "pytest-cov>=7.0.0",
     "ruff>=0.14.13",
 ]
-
-[project.scripts]
-app = "{{cookiecutter.package_name}}.app:app"
 
 [tool.ruff]
 line-length = 120
@@ -43,25 +35,42 @@ select = [
     "I", # import sorting (isort-compatible)
 ]
 
+[tool.ruff.lint.isort]
+known-first-party = ["{{cookiecutter.app_package}}", "{{cookiecutter.lib_package}}"]
+
 [tool.pyright]
 pythonVersion = "3.13"
 venvPath = "."
 venv = ".venv"
-include = ["src", "tests"]
+include = ["apps", "packages"]
 exclude = ["**/__pycache__"]
-typeCheckingMode = "strict"  # ["off", "basic", "standard", "strict"]
+extraPaths = [
+    "apps/{{cookiecutter.app_slug}}/src",
+    "packages/{{cookiecutter.lib_slug}}/src",
+]
+typeCheckingMode = "strict" # ["off", "basic", "standard", "strict"]
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
-addopts = "--cov={{cookiecutter.package_name}} --cov-report=term-missing"
+testpaths = [
+    "apps/{{cookiecutter.app_slug}}/tests",
+    "packages/{{cookiecutter.lib_slug}}/tests",
+]
+pythonpath = [
+    "apps/{{cookiecutter.app_slug}}/src",
+    "packages/{{cookiecutter.lib_slug}}/src",
+]
+addopts = "--cov={{cookiecutter.app_package}} --cov={{cookiecutter.lib_package}} --cov-report=term-missing"
 
 [tool.coverage.run]
 branch = true
-source = ["{{cookiecutter.package_name}}"]
+source = ["{{cookiecutter.app_package}}", "{{cookiecutter.lib_package}}"]
 relative_files = true
 
 [tool.coverage.paths]
-source = ["src/{{cookiecutter.package_name}}"]
+source = [
+    "apps/{{cookiecutter.app_slug}}/src/{{cookiecutter.app_package}}",
+    "packages/{{cookiecutter.lib_slug}}/src/{{cookiecutter.lib_package}}",
+]
 
 [tool.coverage.report]
 fail_under = 80
@@ -81,4 +90,7 @@ directory = "htmlcov"
 output = "coverage.xml"
 
 [tool.uv]
-package = true
+package = false
+
+[tool.uv.workspace]
+members = ["apps/*", "packages/*"]

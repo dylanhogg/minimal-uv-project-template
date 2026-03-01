@@ -4,8 +4,10 @@ import sys
 from pathlib import Path
 
 ROOT = Path.cwd()
-PACKAGE_NAME = "{{ cookiecutter.package_name }}"
-
+APP_SLUG = "{{ cookiecutter.app_slug }}"
+APP_PACKAGE = "{{ cookiecutter.app_package }}"
+LIB_SLUG = "{{ cookiecutter.lib_slug }}"
+LIB_PACKAGE = "{{ cookiecutter.lib_package }}"
 
 
 def fail(message: str) -> None:
@@ -21,8 +23,14 @@ def verify_required_files() -> None:
         ROOT / "docker-compose.yml",
         ROOT / "scripts" / "vscode_launch.sh",
         ROOT / "docs" / "template" / "vscode-debug-setup.md",
-        ROOT / "src" / PACKAGE_NAME / "app.py",
-        ROOT / "tests" / PACKAGE_NAME / "test_app.py",
+        ROOT / "apps" / APP_SLUG / "pyproject.toml",
+        ROOT / "apps" / APP_SLUG / "src" / APP_PACKAGE / "app.py",
+        ROOT / "apps" / APP_SLUG / "tests" / "test_app.py",
+        ROOT / "packages" / LIB_SLUG / "pyproject.toml",
+        ROOT / "packages" / LIB_SLUG / "src" / LIB_PACKAGE / "env.py",
+        ROOT / "packages" / LIB_SLUG / "src" / LIB_PACKAGE / "log.py",
+        ROOT / "packages" / LIB_SLUG / "tests" / "test_env.py",
+        ROOT / "packages" / LIB_SLUG / "tests" / "test_log.py",
     ]
     missing_files = [str(path.relative_to(ROOT)) for path in required_files if not path.exists()]
     if missing_files:

@@ -3,17 +3,14 @@ set -euo pipefail
 
 echo "Launch configuration creation..."
 
-# Check if launch.json already exists
 if [ -f .vscode/launch.json ]; then
     echo "Already exists, skipping creation of .vscode/launch.json."
     exit 0
 fi
 
-# Create .vscode directory if it doesn't exist
 mkdir -p .vscode
 
-# Create launch.json file
-cat > .vscode/launch.json << 'EOF'
+cat > .vscode/launch.json << 'EOF2'
 {
     "version": "0.2.0",
     "configurations": [
@@ -21,7 +18,7 @@ cat > .vscode/launch.json << 'EOF'
             "name": "Python Debugger: Module",
             "type": "debugpy",
             "request": "launch",
-            "module": "{{cookiecutter.package_name}}.app",
+            "module": "{{cookiecutter.app_package}}.app",
             "cwd": "${workspaceFolder}",
             "envFile": "${workspaceFolder}/.env",
             "args": [
@@ -33,9 +30,8 @@ cat > .vscode/launch.json << 'EOF'
         }
     ]
 }
-EOF
+EOF2
 
 cat .vscode/launch.json
 
 echo "Created .vscode/launch.json."
-

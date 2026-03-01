@@ -1,6 +1,6 @@
 import pytest
 
-from {{cookiecutter.package_name}}.library import env
+from {{cookiecutter.lib_package}} import env
 
 
 def test_env_get_returns_value_when_set(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -2,7 +2,7 @@ from typing import Any
 
 import pytest
 
-from {{cookiecutter.package_name}} import app
+from {{cookiecutter.app_package}} import app
 
 
 def test_app_main_calls_configure_and_returns_zero(monkeypatch: pytest.MonkeyPatch) -> None:

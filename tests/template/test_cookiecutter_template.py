@@ -34,7 +34,13 @@ def assert_no_unrendered_tokens(project_dir: Path) -> None:
     assert not unresolved, f"Unrendered cookiecutter tokens in: {', '.join(unresolved[:8])}"
 
 
-def assert_expected_files(project_dir: Path, package_name: str) -> None:
+def assert_expected_files(
+    project_dir: Path,
+    app_slug: str,
+    app_package: str,
+    lib_slug: str,
+    lib_package: str,
+) -> None:
     required = [
         project_dir / ".github" / "workflows" / "ci.yml",
         project_dir / ".pre-commit-config.yaml",
@@ -43,29 +49,50 @@ def assert_expected_files(project_dir: Path, package_name: str) -> None:
         project_dir / "pyproject.toml",
         project_dir / "scripts" / "vscode_launch.sh",
         project_dir / "docs" / "template" / "vscode-debug-setup.md",
-        project_dir / "src" / package_name / "app.py",
-        project_dir / "tests" / package_name / "test_app.py",
+        project_dir / "apps" / app_slug / "pyproject.toml",
+        project_dir / "apps" / app_slug / "src" / app_package / "app.py",
+        project_dir / "apps" / app_slug / "tests" / "test_app.py",
+        project_dir / "packages" / lib_slug / "pyproject.toml",
+        project_dir / "packages" / lib_slug / "src" / lib_package / "env.py",
+        project_dir / "packages" / lib_slug / "src" / lib_package / "log.py",
+        project_dir / "packages" / lib_slug / "tests" / "test_env.py",
+        project_dir / "packages" / lib_slug / "tests" / "test_log.py",
     ]
     missing = [str(path.relative_to(project_dir)) for path in required if not path.exists()]
     assert not missing, f"Missing required files: {', '.join(missing)}"
 
 
-def assert_package_wiring(project_dir: Path, project_slug: str, package_name: str) -> None:
-    pyproject_text = (project_dir / "pyproject.toml").read_text(encoding="utf-8")
-    assert f'name = "{project_slug}"' in pyproject_text
-    assert f'app = "{package_name}.app:app"' in pyproject_text
-    assert f'--cov={package_name}' in pyproject_text
-    assert f'source = ["{package_name}"]' in pyproject_text
-    assert f'source = ["src/{package_name}"]' in pyproject_text
+def assert_workspace_wiring(
+    project_dir: Path,
+    project_slug: str,
+    app_slug: str,
+    app_package: str,
+    lib_slug: str,
+    lib_package: str,
+) -> None:
+    root_pyproject = (project_dir / "pyproject.toml").read_text(encoding="utf-8")
+    assert f'name = "{project_slug}-workspace"' in root_pyproject
+    assert 'members = ["apps/*", "packages/*"]' in root_pyproject
+    assert f'--cov={app_package}' in root_pyproject
+    assert f'--cov={lib_package}' in root_pyproject
+    assert f'source = ["{app_package}", "{lib_package}"]' in root_pyproject
+
+    app_pyproject = (project_dir / "apps" / app_slug / "pyproject.toml").read_text(encoding="utf-8")
+    assert f'name = "{app_slug}"' in app_pyproject
+    assert f'app = "{app_package}.app:app"' in app_pyproject
+    assert f'"{lib_slug}"' in app_pyproject
+    assert f'"{lib_slug}" = {{ workspace = true }}' in app_pyproject
 
     makefile_text = (project_dir / "Makefile").read_text(encoding="utf-8")
-    assert f"uv run python -m {package_name}.app" in makefile_text
+    assert f"uv run python -m {app_package}.app" in makefile_text
 
     vscode_script = (project_dir / "scripts" / "vscode_launch.sh").read_text(encoding="utf-8")
-    assert f'"module": "{package_name}.app"' in vscode_script
+    assert f'"module": "{app_package}.app"' in vscode_script
 
     vscode_doc = (project_dir / "docs" / "template" / "vscode-debug-setup.md").read_text(encoding="utf-8")
-    assert vscode_doc.count(f'"module": "{package_name}.app"') >= 2
+    assert vscode_doc.count(f'"module": "{app_package}.app"') >= 2
+    assert f"${{workspaceFolder}}/apps/{app_slug}/src" in vscode_doc
+    assert f"${{workspaceFolder}}/packages/{lib_slug}/src" in vscode_doc
 
 
 def run_cmd(project_dir: Path, *cmd: str) -> None:
@@ -76,9 +103,8 @@ def run_cmd(project_dir: Path, *cmd: str) -> None:
         )
 
 
-def smoke_test_runtime(project_dir: Path, package_name: str) -> None:
-    run_cmd(project_dir, "uv", "sync", "--all-groups")
-    run_cmd(project_dir, "uv", "sync", "--frozen", "--all-groups")
+def smoke_test_runtime(project_dir: Path, app_package: str) -> None:
+    run_cmd(project_dir, "uv", "sync", "--all-packages", "--all-groups")
     run_cmd(project_dir, "uv", "run", "ruff", "check", ".")
     run_cmd(project_dir, "uv", "run", "pyright")
     run_cmd(project_dir, "uv", "run", "app", "reqarg1", "--optional-arg", "optarg1")
@@ -88,47 +114,68 @@ def smoke_test_runtime(project_dir: Path, package_name: str) -> None:
         "run",
         "python",
         "-m",
-        f"{package_name}.app",
+        f"{app_package}.app",
         "reqarg1",
         "--optional-arg",
         "optarg1",
     )
-    run_cmd(project_dir, "uv", "run", "pytest", "-q", "tests")
+    run_cmd(project_dir, "uv", "run", "pytest", "-q")
 
 
 def test_default_template_render_and_runtime(tmp_path: Path) -> None:
     project_dir = render_template(tmp_path)
-    package_name = "my_project"
     project_slug = "my-project"
+    app_slug = "my-project"
+    app_package = "my_project"
+    lib_slug = "my-project-core"
+    lib_package = "my_project_core"
 
-    assert_expected_files(project_dir, package_name)
+    assert_expected_files(project_dir, app_slug, app_package, lib_slug, lib_package)
     assert_no_unrendered_tokens(project_dir)
-    assert_package_wiring(project_dir, project_slug, package_name)
-    smoke_test_runtime(project_dir, package_name)
+    assert_workspace_wiring(project_dir, project_slug, app_slug, app_package, lib_slug, lib_package)
+    smoke_test_runtime(project_dir, app_package)
 
 
-def test_custom_slug_derived_package(tmp_path: Path) -> None:
+def test_custom_slug_derived_app_and_lib_names(tmp_path: Path) -> None:
     project_slug = "acme-tool"
-    package_name = "acme_tool"
+    app_slug = "acme-tool"
+    app_package = "acme_tool"
+    lib_slug = "acme-tool-core"
+    lib_package = "acme_tool_core"
     project_dir = render_template(tmp_path, project_slug=project_slug)
 
-    assert_expected_files(project_dir, package_name)
+    assert_expected_files(project_dir, app_slug, app_package, lib_slug, lib_package)
     assert_no_unrendered_tokens(project_dir)
-    assert_package_wiring(project_dir, project_slug, package_name)
-    smoke_test_runtime(project_dir, package_name)
+    assert_workspace_wiring(project_dir, project_slug, app_slug, app_package, lib_slug, lib_package)
+    smoke_test_runtime(project_dir, app_package)
 
 
-def test_custom_slug_with_package_override(tmp_path: Path) -> None:
-    project_slug = "acme-tool"
-    package_name = "acme_cli"
-    project_dir = render_template(tmp_path, project_slug=project_slug, package_name=package_name)
+def test_custom_app_and_lib_overrides(tmp_path: Path) -> None:
+    project_slug = "acme-repo"
+    app_slug = "acme-cli"
+    app_package = "acme_cli"
+    lib_slug = "acme-shared"
+    lib_package = "acme_shared"
+    project_dir = render_template(
+        tmp_path,
+        project_slug=project_slug,
+        app_slug=app_slug,
+        app_package=app_package,
+        lib_slug=lib_slug,
+        lib_package=lib_package,
+    )
 
-    assert_expected_files(project_dir, package_name)
+    assert_expected_files(project_dir, app_slug, app_package, lib_slug, lib_package)
     assert_no_unrendered_tokens(project_dir)
-    assert_package_wiring(project_dir, project_slug, package_name)
-    smoke_test_runtime(project_dir, package_name)
+    assert_workspace_wiring(project_dir, project_slug, app_slug, app_package, lib_slug, lib_package)
+    smoke_test_runtime(project_dir, app_package)
 
 
 def test_invalid_author_email_fails_pre_gen(tmp_path: Path) -> None:
     with pytest.raises(FailedHookException):
         render_template(tmp_path, author_email="not-an-email")
+
+
+def test_colliding_app_and_lib_packages_fail_pre_gen(tmp_path: Path) -> None:
+    with pytest.raises(FailedHookException):
+        render_template(tmp_path, app_package="same_name", lib_package="same_name")

@@ -1,0 +1,15 @@
+[project]
+name = "{{cookiecutter.lib_slug}}"
+version = "0.1.0"
+description = "Shared library package"
+requires-python = ">=3.13"
+dependencies = [
+    "loguru>=0.7.3",
+]
+
+[build-system]
+requires = ["hatchling>=1.24.2"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/{{cookiecutter.lib_package}}"]
