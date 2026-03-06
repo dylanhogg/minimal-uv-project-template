@@ -1,11 +1,21 @@
 from __future__ import annotations
 
+import os
 import subprocess
+import sys
+import tomllib
 from pathlib import Path
+from typing import Any
 
 import pytest
 from cookiecutter.exceptions import FailedHookException
 from cookiecutter.main import cookiecutter
+
+HOOKS_DIR = Path(__file__).resolve().parents[2] / "hooks"
+if str(HOOKS_DIR) not in sys.path:
+    sys.path.insert(0, str(HOOKS_DIR))
+
+from template_contract import required_project_paths
 
 
 def render_template(tmp_path: Path, **extra_context: str) -> Path:
@@ -41,25 +51,19 @@ def assert_expected_files(
     lib_slug: str,
     lib_package: str,
 ) -> None:
-    required = [
-        project_dir / ".github" / "workflows" / "ci.yml",
-        project_dir / ".pre-commit-config.yaml",
-        project_dir / "Dockerfile",
-        project_dir / "docker-compose.yml",
-        project_dir / "pyproject.toml",
-        project_dir / "scripts" / "vscode_launch.sh",
-        project_dir / "docs" / "template" / "vscode-debug-setup.md",
-        project_dir / "apps" / app_slug / "pyproject.toml",
-        project_dir / "apps" / app_slug / "src" / app_package / "app.py",
-        project_dir / "apps" / app_slug / "tests" / "test_app.py",
-        project_dir / "packages" / lib_slug / "pyproject.toml",
-        project_dir / "packages" / lib_slug / "src" / lib_package / "env.py",
-        project_dir / "packages" / lib_slug / "src" / lib_package / "log.py",
-        project_dir / "packages" / lib_slug / "tests" / "test_env.py",
-        project_dir / "packages" / lib_slug / "tests" / "test_log.py",
-    ]
+    required = required_project_paths(
+        project_dir,
+        app_slug=app_slug,
+        app_package=app_package,
+        lib_slug=lib_slug,
+        lib_package=lib_package,
+    )
     missing = [str(path.relative_to(project_dir)) for path in required if not path.exists()]
     assert not missing, f"Missing required files: {', '.join(missing)}"
+
+
+def load_toml(path: Path) -> dict[str, Any]:
+    return tomllib.loads(path.read_text(encoding="utf-8"))
 
 
 def assert_workspace_wiring(
@@ -70,18 +74,22 @@ def assert_workspace_wiring(
     lib_slug: str,
     lib_package: str,
 ) -> None:
-    root_pyproject = (project_dir / "pyproject.toml").read_text(encoding="utf-8")
-    assert f'name = "{project_slug}-workspace"' in root_pyproject
-    assert 'members = ["apps/*", "packages/*"]' in root_pyproject
-    assert f'--cov={app_package}' in root_pyproject
-    assert f'--cov={lib_package}' in root_pyproject
-    assert f'source = ["{app_package}", "{lib_package}"]' in root_pyproject
+    root_pyproject = load_toml(project_dir / "pyproject.toml")
+    assert root_pyproject["project"]["name"] == f"{project_slug}-workspace"
+    assert root_pyproject["tool"]["uv"]["workspace"]["members"] == ["apps/*", "packages/*"]
+    assert ".cache" in root_pyproject["tool"]["ruff"]["extend-exclude"]
+    assert ".venv" in root_pyproject["tool"]["ruff"]["extend-exclude"]
 
-    app_pyproject = (project_dir / "apps" / app_slug / "pyproject.toml").read_text(encoding="utf-8")
-    assert f'name = "{app_slug}"' in app_pyproject
-    assert f'app = "{app_package}.app:app"' in app_pyproject
-    assert f'"{lib_slug}"' in app_pyproject
-    assert f'"{lib_slug}" = {{ workspace = true }}' in app_pyproject
+    pytest_addopts = root_pyproject["tool"]["pytest"]["ini_options"]["addopts"]
+    assert f"--cov={app_package}" in pytest_addopts
+    assert f"--cov={lib_package}" in pytest_addopts
+    assert root_pyproject["tool"]["coverage"]["run"]["source"] == [app_package, lib_package]
+
+    app_pyproject = load_toml(project_dir / "apps" / app_slug / "pyproject.toml")
+    assert app_pyproject["project"]["name"] == app_slug
+    assert app_pyproject["project"]["scripts"]["app"] == f"{app_package}.app:app"
+    assert lib_slug in app_pyproject["project"]["dependencies"]
+    assert app_pyproject["tool"]["uv"]["sources"][lib_slug] == {"workspace": True}
 
     makefile_text = (project_dir / "Makefile").read_text(encoding="utf-8")
     assert f"uv run python -m {app_package}.app" in makefile_text
@@ -95,8 +103,16 @@ def assert_workspace_wiring(
     assert f"${{workspaceFolder}}/packages/{lib_slug}/src" in vscode_doc
 
 
+def runtime_env(project_dir: Path) -> dict[str, str]:
+    env = os.environ.copy()
+    for key in ("PYTHONPATH", "UV_CACHE_DIR", "VIRTUAL_ENV"):
+        env.pop(key, None)
+    env["UV_CACHE_DIR"] = str(project_dir / ".cache" / "uv")
+    return env
+
+
 def run_cmd(project_dir: Path, *cmd: str) -> None:
-    proc = subprocess.run(cmd, cwd=project_dir, text=True, capture_output=True)
+    proc = subprocess.run(cmd, cwd=project_dir, text=True, capture_output=True, env=runtime_env(project_dir))
     if proc.returncode != 0:
         raise AssertionError(
             f"Command failed: {' '.join(cmd)}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
@@ -122,49 +138,38 @@ def smoke_test_runtime(project_dir: Path, app_package: str) -> None:
     run_cmd(project_dir, "uv", "run", "pytest", "-q")
 
 
-def test_default_template_render_and_runtime(tmp_path: Path) -> None:
-    project_dir = render_template(tmp_path)
-    project_slug = "my-project"
-    app_slug = "my-project"
-    app_package = "my_project"
-    lib_slug = "my-project-core"
-    lib_package = "my_project_core"
-
-    assert_expected_files(project_dir, app_slug, app_package, lib_slug, lib_package)
-    assert_no_unrendered_tokens(project_dir)
-    assert_workspace_wiring(project_dir, project_slug, app_slug, app_package, lib_slug, lib_package)
-    smoke_test_runtime(project_dir, app_package)
-
-
-def test_custom_slug_derived_app_and_lib_names(tmp_path: Path) -> None:
-    project_slug = "acme-tool"
-    app_slug = "acme-tool"
-    app_package = "acme_tool"
-    lib_slug = "acme-tool-core"
-    lib_package = "acme_tool_core"
-    project_dir = render_template(tmp_path, project_slug=project_slug)
-
-    assert_expected_files(project_dir, app_slug, app_package, lib_slug, lib_package)
-    assert_no_unrendered_tokens(project_dir)
-    assert_workspace_wiring(project_dir, project_slug, app_slug, app_package, lib_slug, lib_package)
-    smoke_test_runtime(project_dir, app_package)
-
-
-def test_custom_app_and_lib_overrides(tmp_path: Path) -> None:
-    project_slug = "acme-repo"
-    app_slug = "acme-cli"
-    app_package = "acme_cli"
-    lib_slug = "acme-shared"
-    lib_package = "acme_shared"
-    project_dir = render_template(
-        tmp_path,
-        project_slug=project_slug,
-        app_slug=app_slug,
-        app_package=app_package,
-        lib_slug=lib_slug,
-        lib_package=lib_package,
-    )
-
+@pytest.mark.parametrize(
+    ("render_kwargs", "project_slug", "app_slug", "app_package", "lib_slug", "lib_package"),
+    [
+        ({}, "my-project", "my-project", "my_project", "my-project-core", "my_project_core"),
+        ({"project_slug": "acme-tool"}, "acme-tool", "acme-tool", "acme_tool", "acme-tool-core", "acme_tool_core"),
+        (
+            {
+                "project_slug": "acme-repo",
+                "app_slug": "acme-cli",
+                "app_package": "acme_cli",
+                "lib_slug": "acme-shared",
+                "lib_package": "acme_shared",
+            },
+            "acme-repo",
+            "acme-cli",
+            "acme_cli",
+            "acme-shared",
+            "acme_shared",
+        ),
+    ],
+    ids=["default", "custom-project-slug", "custom-app-and-lib-overrides"],
+)
+def test_template_render_and_runtime(
+    tmp_path: Path,
+    render_kwargs: dict[str, str],
+    project_slug: str,
+    app_slug: str,
+    app_package: str,
+    lib_slug: str,
+    lib_package: str,
+) -> None:
+    project_dir = render_template(tmp_path, **render_kwargs)
     assert_expected_files(project_dir, app_slug, app_package, lib_slug, lib_package)
     assert_no_unrendered_tokens(project_dir)
     assert_workspace_wiring(project_dir, project_slug, app_slug, app_package, lib_slug, lib_package)
@@ -179,3 +184,8 @@ def test_invalid_author_email_fails_pre_gen(tmp_path: Path) -> None:
 def test_colliding_app_and_lib_packages_fail_pre_gen(tmp_path: Path) -> None:
     with pytest.raises(FailedHookException):
         render_template(tmp_path, app_package="same_name", lib_package="same_name")
+
+
+def test_colliding_app_and_lib_slugs_fail_pre_gen(tmp_path: Path) -> None:
+    with pytest.raises(FailedHookException):
+        render_template(tmp_path, app_slug="same-name", lib_slug="same-name")

@@ -21,6 +21,7 @@ dev = [
 [tool.ruff]
 line-length = 120
 target-version = "py313"
+extend-exclude = [".cache", ".venv"]
 
 [tool.ruff.format]
 quote-style = "double"

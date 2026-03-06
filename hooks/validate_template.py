@@ -5,6 +5,7 @@ import tempfile
 from pathlib import Path
 
 from cookiecutter.main import cookiecutter
+from template_contract import required_project_paths
 
 SMOKE_PROJECT_SLUG = "precommit-smoke-template"
 SMOKE_APP_SLUG = SMOKE_PROJECT_SLUG
@@ -32,12 +33,13 @@ def main() -> int:
         )
 
         generated_root = Path(temp_dir) / SMOKE_PROJECT_SLUG
-        required_files = [
-            generated_root / "pyproject.toml",
-            generated_root / "Makefile",
-            generated_root / "apps" / SMOKE_APP_SLUG / "src" / SMOKE_APP_PACKAGE / "app.py",
-            generated_root / "packages" / SMOKE_LIB_SLUG / "src" / SMOKE_LIB_PACKAGE / "env.py",
-        ]
+        required_files = required_project_paths(
+            generated_root,
+            app_slug=SMOKE_APP_SLUG,
+            app_package=SMOKE_APP_PACKAGE,
+            lib_slug=SMOKE_LIB_SLUG,
+            lib_package=SMOKE_LIB_PACKAGE,
+        )
         missing = [str(path.relative_to(generated_root)) for path in required_files if not path.exists()]
         if missing:
             sys.stderr.write(f"Template render smoke failed. Missing files: {', '.join(missing)}\n")

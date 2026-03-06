@@ -3,6 +3,12 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+TEMPLATE_HOOKS_DIR = Path("{{ cookiecutter._template }}") / "hooks"
+if TEMPLATE_HOOKS_DIR.exists():
+    sys.path.insert(0, str(TEMPLATE_HOOKS_DIR))
+
+from template_contract import required_project_paths
+
 ROOT = Path.cwd()
 APP_SLUG = "{{ cookiecutter.app_slug }}"
 APP_PACKAGE = "{{ cookiecutter.app_package }}"
@@ -16,22 +22,13 @@ def fail(message: str) -> None:
 
 
 def verify_required_files() -> None:
-    required_files = [
-        ROOT / "pyproject.toml",
-        ROOT / "Makefile",
-        ROOT / "Dockerfile",
-        ROOT / "docker-compose.yml",
-        ROOT / "scripts" / "vscode_launch.sh",
-        ROOT / "docs" / "template" / "vscode-debug-setup.md",
-        ROOT / "apps" / APP_SLUG / "pyproject.toml",
-        ROOT / "apps" / APP_SLUG / "src" / APP_PACKAGE / "app.py",
-        ROOT / "apps" / APP_SLUG / "tests" / "test_app.py",
-        ROOT / "packages" / LIB_SLUG / "pyproject.toml",
-        ROOT / "packages" / LIB_SLUG / "src" / LIB_PACKAGE / "env.py",
-        ROOT / "packages" / LIB_SLUG / "src" / LIB_PACKAGE / "log.py",
-        ROOT / "packages" / LIB_SLUG / "tests" / "test_env.py",
-        ROOT / "packages" / LIB_SLUG / "tests" / "test_log.py",
-    ]
+    required_files = required_project_paths(
+        ROOT,
+        app_slug=APP_SLUG,
+        app_package=APP_PACKAGE,
+        lib_slug=LIB_SLUG,
+        lib_package=LIB_PACKAGE,
+    )
     missing_files = [str(path.relative_to(ROOT)) for path in required_files if not path.exists()]
     if missing_files:
         fail(f"Generated project is missing required files: {', '.join(missing_files)}")
